@@ -1,6 +1,6 @@
-# NeuroVSA (PhoneForge) — Master Technical Architecture
+# NeuroVSA (PhoneForge)
 
-> **An Edge-Native, Zero-LLM, Zero-PyTorch Hyperdimensional Sequence Generation & Agentic Tool Routing Engine**
+> **A Bare-Metal, Zero-LLM Hyperdimensional Computing (HDC) Engine for Edge Intelligence & Agentic Routing**
 
 [![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8?style=flat&logo=go)](https://golang.org)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)](https://react.dev)
@@ -9,16 +9,65 @@
 
 ---
 
-## ⚡ Executive Overview
+## 🎯 What We Are Achieving
 
-**NeuroVSA** is a high-performance local AI engine built entirely on **Hyperdimensional Computing (HDC)** and **Vector Symbolic Architecture (VSA)**. It replaces traditional dense neural networks, floating-point matrix multiplications ($O(N^2)$), and heavy GPU/NPU runtime dependencies (`llama.cpp`, PyTorch, ONNX) with native 64-bit hardware bitwise operations (`XOR`, cyclic bit-shifts, and `POPCNT`).
+NeuroVSA breaks the traditional LLM paradigm by proving that continuous learning, structural code intelligence, and autonomous agent routing do **not** require multi-billion parameter neural networks, cloud GPUs, or floating-point matrix multiplications.
 
-### 🌟 Key Features & Breakthroughs
-- **Zero AI Dependencies**: No Python, no PyTorch, no GGUF models, no OpenAI/Anthropic API calls, no CUDA.
-- **Microsecond Tool Routing**: Agent trajectory state tracking and tool selection execute in **$51.79\,\mu\text{s}$** ($0.0518\text{ ms}$) — over **10,000x faster** than traditional LLM dispatchers.
-- **Ultra-Compact Memory Footprint**: A 10,000-bit hypervector fits in just **157 `uint64` words (1,004 bytes)**.
-- **Go AST Structural Indexer**: Encodes code syntax trees into high-dimensional space for instant structural code search and relational lookup.
-- **60 FPS Retro Terminal UI**: React 18 + Tailwind CSS frontend streaming sequence tokens in real-time over WebSockets with `useRef` rendering optimization.
+By grounding intelligence in **Vector Symbolic Architectures (VSA)** and 10,000-dimensional binary hypervectors, NeuroVSA achieves:
+
+* **Zero-GPU Edge Intelligence:** Runs entirely on standard consumer CPUs (mobile, desktop, or air-gapped servers) using native 64-bit integer bitwise operations.
+* **Instant, Catastrophic-Forgetting-Free Learning:** Ingests new code bases, AST trees, and document structures instantly in $O(1)$ time via vector superposition (bundling)—eliminating backpropagation and multi-day retraining.
+* **Microsecond Agentic Tool Routing:** Replaces slow, multi-second LLM JSON tool calls with deterministic, sub-millisecond Hamming distance vector lookups ($51.79\,\mu\text{s}$ latency).
+* **Extreme Memory & Power Efficiency:** Operates with a total system footprint of ~100 MB RAM and 1.25 KB per hypervector, making it natively phone-trainable and capable of running overnight on a charging phone or Raspberry Pi.
+* **100% Data Privacy & Air-Gapped Autonomy:** Zero external API calls (No OpenAI, No PyTorch, No `llama.cpp`). Every operation is 100% local, secure, and privately owned.
+
+---
+
+## 🛠️ How We Will Achieve It
+
+NeuroVSA achieves these goals through a modular 6-phase engineering pipeline built from absolute scratch in **Go (Golang)** and **React**:
+
+### 1. Bare-Metal Vector Physics (`core/`)
+
+* Packs 10,000-bit binary hypervectors into fixed `[157]uint64` memory blocks.
+* Executes the core VSA operations at near CPU clock speeds:
+  * **Binding ($\otimes$):** Bitwise `XOR` for concept association.
+  * **Permutation ($\rho$):** Cyclic left bit-shifts across word boundaries for temporal/spatial order encoding.
+  * **Bundling ($\oplus$):** Bitwise Majority Vote for associative memory storage.
+  * **Similarity:** Native CPU population counts (`math/bits.OnesCount64`) for parallel Hamming distance lookups.
+
+### 2. AST Code & Structural Parsing (`parser/`)
+
+* Uses Go’s native AST parser (`go/ast`) to convert source code files into structural syntax trees.
+* Encodes function identifiers, parameter types, and return values into high-dimensional space by binding node names with position-permuted child vectors ($V_{\text{AST}} = V_{\text{Func}} \otimes \rho^1(V_{\text{Param1}}) \otimes \rho^2(V_{\text{Param2}})$).
+
+### 3. Associative Memory & Unbinding Decoder (`engine/`)
+
+* Stores sequence hypervectors on disk using memory-mapped files (`mmap`) for instant, zero-heap disk streaming.
+* Performs autoregressive sequence generation by mathematically unbinding the active context vector ($V_{\text{query}} = V_{\text{memory}} \otimes V_{\text{context}}$) and executing parallel nearest-neighbor searches across a token dictionary.
+
+### 4. Trajectory State Agent Tracking (`engine/trajectory.go`)
+
+* Tracks an autonomous agent's execution history by permuting its state vector forward in time with each executed action.
+* Resolves the mathematically optimal next tool action in $<1\text{ ms}$ by measuring vector proximity against registered goal/trajectory templates.
+
+### 5. High-Throughput Streaming API (`api/`)
+
+* Exposes a lightweight, concurrent Go HTTP & WebSocket server (`gorilla/websocket`).
+* Streams predicted tokens and agent execution steps live to connected clients over JSON WebSocket protocols.
+
+### 6. Low-Latency Terminal UI (`ui/`)
+
+* Features a retro green-on-black console built with **React 18** and **Tailwind CSS**.
+* Uses `useRef` token buffering to avoid DOM re-render stutter, delivering smooth 60 FPS streaming directly in the browser.
+
+---
+
+## 🚀 Key Use Cases
+
+1. **Air-Gapped Private Code Oracles:** Index and query enterprise codebases locally without transmitting proprietary intellectual property to third-party cloud APIs.
+2. **Zero-Latency Edge Intent Parsers:** Power local voice agents and mobile UI automation tools with microsecond command recognition.
+3. **High-Speed Resume & Document Matching:** Rank thousands of candidate profiles or structured e-invoices instantaneously via vector similarity search.
 
 ---
 
