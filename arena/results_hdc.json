@@ -11,9 +11,9 @@
     "paraphrase_total": 45
   },
   "latency": {
-    "p50_us": 172.708,
-    "p99_us": 336.25,
-    "mean_us": 179.7930071111111,
+    "p50_us": 163.333,
+    "p99_us": 316.75,
+    "mean_us": 170.048305111111,
     "samples": 4500
   },
   "determinism": {
@@ -23,7 +23,7 @@
   },
   "cold_add": {
     "held_out_intent": "add_todo",
-    "add_latency_us": 1188.042,
+    "add_latency_us": 1091,
     "acc_before": 0,
     "acc_after": 0.8333333333333334,
     "test_phrases": 6

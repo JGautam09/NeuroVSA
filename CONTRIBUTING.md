@@ -3,6 +3,21 @@
 Thanks for your interest! This is a research and learning project — issues, discussion, and
 pull requests are all welcome.
 
+## Fork and pull-request workflow
+
+Contributions reach `main` through pull requests only; please do not push directly to it.
+
+1. Fork the repository, then create a focused branch from the current `main` in your fork.
+2. Make one coherent change per pull request, including tests and documentation or benchmark
+   updates where they are relevant.
+3. Run the checks in the next section and push your branch.
+4. Open a pull request against `JGautam09/NeuroVSA:main`, complete the PR template, and respond
+   to review and CI feedback.
+
+By submitting a contribution, you agree that it may be distributed under this repository's
+[MIT License](LICENSE). NeuroVSA does not require a contributor license agreement or Developer
+Certificate of Origin sign-off at this time.
+
 ## Development workflow
 
 ```bash
