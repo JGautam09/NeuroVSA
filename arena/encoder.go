@@ -1,7 +1,6 @@
 package arena
 
 import (
-	"hash/fnv"
 	"regexp"
 	"strings"
 
@@ -31,26 +30,14 @@ func tokenize(s string) []string {
 	return tokenSplit.FindAllString(strings.ToLower(s), -1)
 }
 
-// tokenHV deterministically derives a token's base hypervector from a seeded splitmix64
-// stream keyed by the FNV-1a hash of the token. Results are cached (still deterministic).
+// tokenHV derives a token's base hypervector via core.SeededHV under core.DefaultSeed —
+// seed 0 is bit-compatible with this encoder's original private hash stream, so the arena's
+// committed reference results remain valid. Results are cached (still deterministic).
 func (e *Encoder) tokenHV(tok string) core.Hypervector {
 	if hv, ok := e.cache[tok]; ok {
 		return hv
 	}
-	h := fnv.New64a()
-	h.Write([]byte(tok))
-	x := h.Sum64()
-
-	var hv core.Hypervector
-	for i := 0; i < core.NumWords; i++ {
-		x += 0x9E3779B97F4A7C15
-		z := x
-		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
-		z = (z ^ (z >> 27)) * 0x94D049BB133111EB
-		z = z ^ (z >> 31)
-		hv.Vector[i] = z
-	}
-	hv.Vector[core.NumWords-1] &= core.LastWordMask
+	hv := core.SeededHV(core.DefaultSeed, tok)
 	e.cache[tok] = hv
 	return hv
 }
