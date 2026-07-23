@@ -1,0 +1,30 @@
+# Binaries & Executables
+neuro-vsa
+*.exe
+*.exe font
+*.dll
+*.so
+*.dylib
+*.bin
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node dependencies
+ui/node_modules/
+ui/dist/
+ui/.vite/
+
+# Go build artifacts
+*.out
+*.test
+*.prof
+
+# AntiGravity / IDE scratch
+.gemini/
