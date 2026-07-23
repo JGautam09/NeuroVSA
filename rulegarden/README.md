@@ -60,3 +60,23 @@ worlds they learned from.
   system, by design (see the repo's [arena](../arena/) for why).
 - **Receipts are unsigned in the browser MVP** (replay-verifiable only). Signed lesson packs
   exist at the Go API/CLI level; browser key management is out of scope for now.
+
+## Security & hardening
+
+Pasted world packs, downloaded receipts, and saved brain images are treated as **untrusted
+input** and validated before use (findings from an initial security review are fixed here):
+
+- **Memory files** — the loader bounds the ledger count against the file size before
+  allocating, parses atomically, and rebuilds the vote tally and majority vector *from the
+  ledger* (the fingerprint's source of truth), so a malformed or matrix-tampered image cannot
+  crash `nvsa-verify` or slip past its state anchor.
+- **Decision receipts** certify the action the creature *actually executed*, captured at
+  decision time against the decision-time brain. An instinct override (raw cleanup winner ≠
+  executed action) is a structured, re-derived field — not a free-form note — and teaching or
+  forgetting *after* a decision cannot retarget an already-issued receipt.
+- **Pasted worlds** — replay is bounded on pack byte size, tick horizon, event count, and
+  merge-nesting depth, so a shared pack cannot freeze the tab. A brain-merge site collision
+  (two worlds sharing a seed) is refused atomically, leaving the world untouched.
+- **CRDT identity** — switching a memory's writer site recomputes its next sequence, so a
+  site adopted through a merge can never mint a colliding association id; pack labels over the
+  64 KiB serialization limit are rejected before they can corrupt an image.
