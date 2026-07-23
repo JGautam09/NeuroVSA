@@ -50,6 +50,10 @@ type Event struct {
 	Action   string                `json:"action,omitempty"`
 	Lesson   *engine.AssociationID `json:"lesson,omitempty"` // "site:seq" in JSON
 	NewSees  string                `json:"new_sees,omitempty"`
+	// ForeignPack embeds another player's full world pack for merge_brains events, so a
+	// merged world remains completely defined by its own seed + event log (worlds quote the
+	// worlds they learned from — replay stays bit-exact).
+	ForeignPack *Pack `json:"foreign_pack,omitempty"`
 }
 
 // World is fully defined by (Seed, Events): replaying the log against the seed reproduces a
@@ -87,7 +91,12 @@ func (w *World) Apply(e Event) error {
 			return err
 		}
 		w.nextCrID++
-		w.Creatures = append(w.Creatures, &Creature{ID: w.nextCrID, X: e.X, Y: e.Y, Brain: NewBrain(w.Vocab)})
+		brain := NewBrain(w.Vocab)
+		// Each brain claims a deterministic writer site derived from (world seed, creature
+		// id): stable under replay, distinct across worlds — the NeuroMesh precondition for
+		// merging brains between players' worlds.
+		brain.Memory().SetSite(creatureSite(w.Seed, w.nextCrID))
+		w.Creatures = append(w.Creatures, &Creature{ID: w.nextCrID, X: e.X, Y: e.Y, Brain: brain})
 	case "spawn_object":
 		if err := w.checkPos(e.X, e.Y); err != nil {
 			return err
@@ -135,6 +144,17 @@ func (w *World) Apply(e Event) error {
 			return fmt.Errorf("forget event missing lesson id")
 		}
 		if err := c.Brain.Forget(*e.Lesson); err != nil {
+			return err
+		}
+	case "merge_brains":
+		c, err := w.creature(e.Creature)
+		if err != nil {
+			return err
+		}
+		if e.ForeignPack == nil {
+			return fmt.Errorf("merge_brains event missing foreign pack")
+		}
+		if err := w.mergeBrains(c, *e.ForeignPack); err != nil {
 			return err
 		}
 	default:
@@ -307,6 +327,86 @@ func (w *World) Hash() string {
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// ---- merge worlds (NeuroMesh in costume) ----
+
+// mergeBrains replays the foreign world pack and merges EVERY creature brain it contains
+// into the target creature's brain. Atomic: the merges run against a clone of the target
+// memory, which replaces the live brain only if every source merges cleanly — a failed merge
+// (e.g. a same-seed site collision) leaves the world untouched, preserving replay integrity.
+func (w *World) mergeBrains(c *Creature, foreign Pack) error {
+	fw, err := Replay(foreign)
+	if err != nil {
+		return fmt.Errorf("replaying foreign pack: %w", err)
+	}
+	if len(fw.Creatures) == 0 {
+		return fmt.Errorf("foreign pack contains no creatures")
+	}
+
+	img, err := c.Brain.Memory().MarshalBinary()
+	if err != nil {
+		return err
+	}
+	scratch := engine.NewAssociativeMemory()
+	if err := scratch.UnmarshalBinary(img); err != nil {
+		return err
+	}
+	for _, fc := range fw.Creatures {
+		if _, err := scratch.Merge(fc.Brain.Memory()); err != nil {
+			return fmt.Errorf("merging brain of foreign creature %d: %w", fc.ID, err)
+		}
+	}
+	c.Brain.replaceMemory(scratch)
+	return nil
+}
+
+// MergeBrainsFrom is the public API behind merge_brains: it applies (and logs) the event.
+func (w *World) MergeBrainsFrom(foreign Pack, creatureID int) error {
+	return w.Apply(Event{Op: "merge_brains", Creature: creatureID, ForeignPack: &foreign})
+}
+
+// ---- receipts (ProofRoute in costume) ----
+
+// CertifyCreature issues a replay-verifiable DecisionCertificate for the creature's most
+// recent decision, together with the brain's binary image — the pair nvsa-verify needs.
+// Instinct decisions are certifiable too: the certificate records the raw ranking, and its
+// Note declares the basis and the action actually taken (instinct overrides to wander).
+func (w *World) CertifyCreature(id int) (engine.DecisionCertificate, []byte, error) {
+	c, err := w.creature(id)
+	if err != nil {
+		return engine.DecisionCertificate{}, nil, err
+	}
+	d := c.LastDecision
+	if d == nil {
+		return engine.DecisionCertificate{}, nil, fmt.Errorf("creature %d has no decision yet — tick the world", id)
+	}
+
+	tokens := make([]string, len(Actions))
+	for i, a := range Actions {
+		tokens[i] = "action:" + a
+	}
+	cert, err := engine.IssueDecision(c.Brain.Memory(), w.Vocab.EncodePercept(d.Percept), tokens)
+	if err != nil {
+		return engine.DecisionCertificate{}, nil, err
+	}
+	cert.Note = fmt.Sprintf("rulegarden world=%d tick=%d creature=%d percept=%s basis=%s acted=%s",
+		w.Seed, w.Tick, id, d.Percept, d.Basis, d.Action)
+
+	brain, err := c.Brain.Memory().MarshalBinary()
+	if err != nil {
+		return engine.DecisionCertificate{}, nil, err
+	}
+	return cert, brain, nil
+}
+
+// creatureSite derives a brain's writer identity from (world seed, creature id) via a
+// splitmix64 mix — stable under replay, distinct across world seeds. Two worlds sharing a
+// seed produce the same sites; merging their divergent histories is refused by the engine's
+// collision check (documented limitation: merge partners should use different seeds).
+func creatureSite(worldSeed uint64, creatureID int) uint64 {
+	r := newRNG(worldSeed ^ (0xC2B2AE3D27D4EB4F * uint64(creatureID)))
+	return r.next()
 }
 
 // ---- helpers ----

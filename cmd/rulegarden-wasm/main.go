@@ -7,6 +7,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strconv"
 	"syscall/js"
@@ -129,6 +130,39 @@ func main() {
 		// hash() — the determinism fingerprint (two identical hashes = identical worlds).
 		"hash": js.FuncOf(func(this js.Value, args []js.Value) any {
 			return reply(world.Hash(), nil)
+		}),
+		// mergeBrains(packJSON, creatureID) — NeuroMesh: replay a friend's world pack and
+		// merge every creature brain in it into the given local creature. Logged as an event
+		// (the foreign pack rides along), so the merged world still replays bit-exactly.
+		"mergeBrains": js.FuncOf(func(this js.Value, args []js.Value) any {
+			var p rulegarden.Pack
+			if err := json.Unmarshal([]byte(args[0].String()), &p); err != nil {
+				return reply(nil, err)
+			}
+			id, err := strconv.Atoi(args[1].String())
+			if err != nil {
+				return reply(nil, err)
+			}
+			if err := world.MergeBrainsFrom(p, id); err != nil {
+				return reply(nil, err)
+			}
+			return reply(state(), nil)
+		}),
+		// certify(creatureID) — ProofRoute: a replay-verifiable receipt for the creature's
+		// last decision plus its brain image (base64 v3), the pair nvsa-verify consumes.
+		"certify": js.FuncOf(func(this js.Value, args []js.Value) any {
+			id, err := strconv.Atoi(args[0].String())
+			if err != nil {
+				return reply(nil, err)
+			}
+			cert, brain, err := world.CertifyCreature(id)
+			if err != nil {
+				return reply(nil, err)
+			}
+			return reply(map[string]any{
+				"receipt":   cert,
+				"brain_b64": base64.StdEncoding.EncodeToString(brain),
+			}, nil)
 		}),
 		// version() — engine capacity constant for UI limits.
 		"version": js.FuncOf(func(this js.Value, args []js.Value) any {

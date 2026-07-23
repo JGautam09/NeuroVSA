@@ -184,7 +184,50 @@ $('import').onclick = () => {
   selected = null;
   log('imported pack and replayed it deterministically');
 };
+
+// NeuroMesh in costume: merge every creature brain from the pasted world pack into the
+// selected creature. The merge is logged as an event (the foreign pack rides along), so
+// this world still replays bit-exactly — and foreign lessons keep their foreign site ids.
+$('mergeBrains').onclick = () => {
+  if (!selected) { log('select a creature first — it will absorb the visiting lessons'); return; }
+  const data = refresh_or_null(call('mergeBrains', $('pack').value, selected));
+  if (data) {
+    refresh(data);
+    log(`merged brains from the pasted world into creature #${selected} — foreign lessons keep their site ids (see ledger)`);
+  }
+};
+
+// ProofRoute in costume: download a replay-verifiable receipt for the selected creature's
+// last decision, plus its brain image. Verify anywhere:
+//   nvsa-verify -cert receipt.json -memory brain.bin
+$('receipt').onclick = () => {
+  if (!selected) { log('select a creature first'); return; }
+  const data = call('certify', selected);
+  if (!data) return;
+  download(`creature${selected}-receipt.json`, JSON.stringify(data.receipt, null, 1), 'application/json');
+  download(`creature${selected}-brain.bin`, b64ToBytes(data.brain_b64), 'application/octet-stream');
+  log(`receipt + brain downloaded — verify with: nvsa-verify -cert creature${selected}-receipt.json -memory creature${selected}-brain.bin`);
+};
+
 $('hash').onclick = () => log('world hash: ' + call('hash'));
+
+function refresh_or_null(data) { return data; }
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function download(name, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 // ---- boot ----
 (async function boot() {

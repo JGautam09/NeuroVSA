@@ -157,10 +157,16 @@ func (b *Brain) Decide(p PerceptSpec) Decision {
 	return d
 }
 
-// Memory exposes the underlying associative memory (used for world hashing and, in later
-// phases, merging).
+// Memory exposes the underlying associative memory (used for world hashing, merging, and
+// receipts).
 func (b *Brain) Memory() *engine.AssociativeMemory {
 	return b.mem
+}
+
+// replaceMemory swaps in a new memory — the atomic-commit step of a multi-source brain
+// merge (the scratch clone becomes live only after every source merged cleanly).
+func (b *Brain) replaceMemory(m *engine.AssociativeMemory) {
+	b.mem = m
 }
 
 func (b *Brain) findLesson(id engine.AssociationID) (engine.AssociationRecord, error) {

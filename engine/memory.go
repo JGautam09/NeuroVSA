@@ -351,6 +351,25 @@ func (am *AssociativeMemory) SaveToFile(filename string) error {
 	return writeMappedFile(filename, am.fileSizeLocked(), am.encodeInto)
 }
 
+// MarshalBinary returns the memory's complete v3 image — byte-identical to a saved file.
+// Used for in-process clones (atomic multi-merge), wasm exports (no filesystem in the
+// browser), and receipt+brain bundles for nvsa-verify.
+func (am *AssociativeMemory) MarshalBinary() ([]byte, error) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	buf := make([]byte, am.fileSizeLocked())
+	am.encodeInto(buf)
+	return buf, nil
+}
+
+// UnmarshalBinary restores a memory from a v3 image (see MarshalBinary). The receiver is
+// fully overwritten.
+func (am *AssociativeMemory) UnmarshalBinary(data []byte) error {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	return am.loadFromImageLocked(data)
+}
+
 // LoadFromFile maps the file and loads the full memory state, leaving the instance ready for
 // continued training, exact removal, and merging. The writer's sequence resumes after the
 // highest own-site entry so future IDs never collide with loaded history.
@@ -363,7 +382,12 @@ func (am *AssociativeMemory) LoadFromFile(filename string) error {
 		return fmt.Errorf("failed to open memory file: %w", err)
 	}
 	defer closer()
+	return am.loadFromImageLocked(data)
+}
 
+// loadFromImageLocked parses a complete v3 image into the receiver. Caller must hold the
+// write lock.
+func (am *AssociativeMemory) loadFromImageLocked(data []byte) error {
 	if err := validateHeader(data); err != nil {
 		return err
 	}
