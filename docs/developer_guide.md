@@ -44,24 +44,29 @@ The `parser` package extracts relational code structures.
 The `engine` package manages sequence prediction memory and microsecond tool selection.
 
 #### Important Symbols:
-- `engine.AssociativeMemory`: Stores sequence history and matrix associations with mmap/binary disk persistence.
-- `engine.HDCDecoder`: Autoregressive sequence prediction loop.
-- `engine.TrajectoryTracker`: Microsecond agent state tracker and tool selector ($51.79\,\mu\text{s}$ latency).
+- `engine.AssociativeMemory`: Stores associations as a per-bit vote-counter vector (O(1) per write, independent of corpus size) with memory-mapped (`mmap`) disk persistence; `OpenReadOnly` maps a saved memory for zero-heap inference.
+- `engine.HDCDecoder`: Autoregressive sequence prediction loop. `EncodeContext` builds seed contexts with the same permute-bind recurrence used in training; `StopThreshold` halts generation at the noise floor.
+- `engine.ToolRouter` / `engine.TrajectoryTracker`: A shared learned routing policy plus per-agent trajectory state; goal- and history-dependent tool selection ($\approx 1.03\,\mu\text{s}$ latency).
 
 ---
 
 ## 3. Extending the Codebase
 
 ### Adding New Agent Tools
-To register a new tool action in the agent trajectory tracker (`engine/trajectory.go`):
+To register a new tool action and teach the router when to use it (`engine/trajectory.go`):
 
-1. Define the constant:
+1. Define the constant and add it to the `StandardTools` cleanup vocabulary:
    ```go
    const ToolDatabaseQuery = "DatabaseQuery"
+
+   var StandardTools = []string{
+       ToolReadFile, ToolWriteFile, ToolRunTests, ToolASTSearch, ToolHTTPReq, ToolTerminal, ToolDatabaseQuery,
+   }
    ```
-2. Add the tool to the registration list in `NewTrajectoryTracker()`:
+2. Teach a workflow that uses it by adding to `DefaultWorkflows` (or call
+   `router.RegisterWorkflow(goal, actions)` at runtime):
    ```go
-   tools := []string{ToolReadFile, ToolWriteFile, ToolRunTests, ToolASTSearch, ToolHTTPReq, ToolTerminal, ToolDatabaseQuery}
+   {Goal: "query_db", Actions: []string{ToolReadFile, ToolDatabaseQuery, ToolWriteFile}},
    ```
 
 ### Adding New VSA Operators

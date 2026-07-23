@@ -1,0 +1,31 @@
+{
+  "router": "neural (model2vec potion-base-8M, static CPU)",
+  "dataset": "structured-routing-v1",
+  "classes": 15,
+  "accuracy": {
+    "canonical": 1.0,
+    "paraphrase": 0.6444444444444445,
+    "canonical_correct": 45,
+    "canonical_total": 45,
+    "paraphrase_correct": 29,
+    "paraphrase_total": 45
+  },
+  "latency": {
+    "p50_us": 25.042,
+    "p99_us": 49.375,
+    "mean_us": 26.150946,
+    "samples": 4500
+  },
+  "determinism": {
+    "runs_compared": 2,
+    "route_mismatches": 0,
+    "bit_identical_prototypes": false
+  },
+  "cold_add": {
+    "held_out_intent": "add_todo",
+    "add_latency_us": 206.459,
+    "acc_before": 0.0,
+    "acc_after": 0.8333333333333334,
+    "test_phrases": 6
+  }
+}

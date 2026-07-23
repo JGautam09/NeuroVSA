@@ -1,5 +1,8 @@
 # NeuroVSA User Manual & API Guide
 
+> For what NeuroVSA is good at — and where a small embedding router beats it — see the
+> [main README](../README.md#honest-limitations) and the benchmark in [`arena/`](../arena/).
+
 ## 1. System Requirements & Setup
 
 ### Prerequisites
@@ -22,7 +25,7 @@ go test -v ./...
 
 ### Step 2: Build Executable
 ```bash
-go build -o neuro-vsa main.go
+go build -o neuro-vsa .
 ```
 
 ### Step 3: Setup UI Dependencies
@@ -42,6 +45,8 @@ From the root directory:
 ```
 *Options*:
 - `-port <number>`: Port for WebSocket server (default: `8080`).
+- `-index-root <dir>`: Directory the `/ast` indexer is confined to (default: `.`). Client-supplied paths cannot escape it.
+- `-allow-all-origins`: Allow WebSocket connections from any origin. Off by default — only loopback origins are accepted, matching the local/air-gapped posture.
 
 ### Running the Web Terminal UI
 From the `ui` directory:
@@ -63,13 +68,15 @@ func main
 ```
 
 ### 2. Microsecond Tool Routing
-Type `/route` followed by your goal:
+Type `/route` followed by a goal. Seeded workflows include `fix_bug`, `add_feature`,
+`refactor_code`, `deploy_service`, `write_docs`, and `call_api`; repeating the same goal walks
+its learned tool sequence.
 ```text
-/route fix_null_pointer_bug
+/route fix_bug
 ```
 *Output*:
 ```text
-[AGENT ROUTER] Tool: TerminalExec | Latency: 51µs | Trajectory Step Count: 1, History: [TerminalExec]
+[AGENT ROUTER] Tool: ASTSearch | Latency: 1µs | Goal: "fix_bug", Step Count: 1, History: [ASTSearch]
 ```
 
 ### 3. Codebase AST Indexing
@@ -102,7 +109,7 @@ Endpoint: `ws://localhost:8080/ws`
 ```json
 {
   "type": "route_tool",
-  "goal": "refactor_ast_parser"
+  "goal": "refactor_code"
 }
 ```
 
@@ -130,8 +137,8 @@ Endpoint: `ws://localhost:8080/ws`
 {
   "type": "trajectory",
   "action": "ReadFile",
-  "latency_us": 51,
-  "summary": "Trajectory Step Count: 2, History: [ASTSearch, ReadFile]"
+  "latency_us": 1,
+  "summary": "Goal: \"fix_bug\", Step Count: 2, History: [ASTSearch, ReadFile]"
 }
 ```
 

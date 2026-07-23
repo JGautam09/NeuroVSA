@@ -7,9 +7,9 @@ import (
 // TokenDictionary maintains a thread-safe mapping between crisp string tokens/AST identifiers
 // and their assigned random base Hypervectors (Item Memory / Cleanup Memory).
 type TokenDictionary struct {
-	mu         sync.RWMutex
-	tokenToHV  map[string]Hypervector
-	hvToToken  []tokenPair
+	mu        sync.RWMutex
+	tokenToHV map[string]Hypervector
+	hvToToken []tokenPair
 }
 
 type tokenPair struct {

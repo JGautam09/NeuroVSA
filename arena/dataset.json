@@ -1,0 +1,95 @@
+{
+  "description": "Structured intent-routing dataset for the NeuroVSA arena. Each intent has canonical training phrases, held-out canonical test phrases (same phrasing style), and paraphrase test phrases (same meaning, deliberately different vocabulary). The canonical vs paraphrase split exposes the HDC-vs-embedding crossover: surface-form matching (HDC) should hold on canonical and degrade on paraphrase; semantic embeddings should hold on both.",
+  "intents": [
+    {
+      "name": "set_timer",
+      "train": ["set a timer for five minutes", "start a ten minute timer", "set timer for 30 seconds", "timer for two minutes", "start a countdown for fifteen minutes", "set a 20 minute timer"],
+      "test_canonical": ["set a timer for three minutes", "start a five minute timer", "timer for 45 seconds"],
+      "test_paraphrase": ["let me know when ten minutes have passed", "count down from five minutes", "buzz me in a quarter of an hour"]
+    },
+    {
+      "name": "play_music",
+      "train": ["play some music", "play my favorite playlist", "put on some jazz", "play the next song", "start playing rock music", "play music by the beatles"],
+      "test_canonical": ["play some pop music", "play my workout playlist", "put on some classical"],
+      "test_paraphrase": ["I want to hear a tune", "throw on a record", "let's get some background sound going"]
+    },
+    {
+      "name": "check_weather",
+      "train": ["what is the weather today", "will it rain tomorrow", "how hot is it outside", "check the weather forecast", "is it going to be sunny", "what's the temperature right now"],
+      "test_canonical": ["what is the weather this weekend", "will it snow tonight", "how cold is it outside"],
+      "test_paraphrase": ["should I bring an umbrella", "do I need a jacket today", "is it pouring out there"]
+    },
+    {
+      "name": "send_message",
+      "train": ["send a text to john", "message my mom", "text sarah I'm on my way", "send a message to the group", "text dad hello", "send sarah a quick note"],
+      "test_canonical": ["send a text to alex", "message my sister", "text the team good morning"],
+      "test_paraphrase": ["drop a line to my brother", "shoot mike a quick word", "let priya know I'll be late"]
+    },
+    {
+      "name": "make_call",
+      "train": ["call mom", "phone the office", "dial john's number", "make a call to sarah", "call the restaurant", "ring up the dentist"],
+      "test_canonical": ["call dad", "phone the bank", "dial alex"],
+      "test_paraphrase": ["get grandma on the line", "connect me to the front desk", "put me through to support"]
+    },
+    {
+      "name": "navigate",
+      "train": ["navigate to the airport", "directions to downtown", "take me home", "how do I get to the mall", "route to the nearest gas station", "drive me to work"],
+      "test_canonical": ["navigate to the hospital", "directions to the stadium", "route to the nearest pharmacy"],
+      "test_paraphrase": ["what's the fastest way to the beach", "guide me to the train station", "plot a course to the hotel"]
+    },
+    {
+      "name": "set_reminder",
+      "train": ["remind me to call the doctor", "set a reminder for the meeting", "remind me to buy milk", "reminder to pay rent tomorrow", "remind me about the dentist at 3", "set a reminder to water the plants"],
+      "test_canonical": ["remind me to send the report", "set a reminder for the interview", "remind me to take my medicine"],
+      "test_paraphrase": ["don't let me forget to lock the door", "nudge me about the parking meter later", "make sure I remember the anniversary"]
+    },
+    {
+      "name": "control_lights",
+      "train": ["turn on the lights", "dim the bedroom lights", "turn off the kitchen light", "set the lights to fifty percent", "switch on the living room lamp", "make the lights brighter"],
+      "test_canonical": ["turn on the porch light", "dim the hallway lights", "turn off the bathroom light"],
+      "test_paraphrase": ["it's too dark in here", "kill the lights in the den", "brighten up the office a bit"]
+    },
+    {
+      "name": "check_calendar",
+      "train": ["what's on my calendar today", "do I have any meetings tomorrow", "check my schedule for friday", "what appointments do I have", "show me my calendar for next week", "am I free this afternoon"],
+      "test_canonical": ["what's on my calendar this weekend", "do I have any events monday", "check my schedule for tonight"],
+      "test_paraphrase": ["what have I got going on later", "am I booked up thursday", "walk me through my day"]
+    },
+    {
+      "name": "translate_text",
+      "train": ["translate hello into spanish", "how do you say thank you in french", "translate this to german", "what is goodbye in italian", "translate good morning to japanese", "say please in mandarin"],
+      "test_canonical": ["translate water into spanish", "how do you say sorry in french", "what is friend in italian"],
+      "test_paraphrase": ["what's the portuguese word for house", "render this sentence in dutch", "give me the korean for welcome"]
+    },
+    {
+      "name": "convert_currency",
+      "train": ["convert 100 dollars to euros", "how much is 50 pounds in yen", "convert 20 euros to dollars", "exchange rate for dollars to rupees", "what is 200 dollars in pesos", "convert 5000 yen to dollars"],
+      "test_canonical": ["convert 75 dollars to euros", "how much is 30 pounds in dollars", "convert 10 euros to yen"],
+      "test_paraphrase": ["what would 100 bucks get me in canadian money", "how far does fifty quid go in swiss francs", "price this in local currency for me"]
+    },
+    {
+      "name": "define_word",
+      "train": ["what does ubiquitous mean", "define serendipity", "what is the definition of ephemeral", "meaning of the word gregarious", "define pragmatic", "what does esoteric mean"],
+      "test_canonical": ["what does verbose mean", "define resilient", "what is the definition of candid"],
+      "test_paraphrase": ["give me the meaning of quixotic", "spell out what nuance really means", "I don't know the word laconic, explain it"]
+    },
+    {
+      "name": "news_briefing",
+      "train": ["give me the news", "what's happening in the world", "read me the headlines", "any breaking news today", "catch me up on the news", "what's in the news today"],
+      "test_canonical": ["give me today's news", "read me the top headlines", "what's the latest news"],
+      "test_paraphrase": ["fill me in on current events", "what's going on out there", "bring me up to speed on today"]
+    },
+    {
+      "name": "adjust_volume",
+      "train": ["turn up the volume", "lower the volume", "set volume to 30", "make it louder", "turn the volume down", "mute the sound"],
+      "test_canonical": ["turn up the sound", "set volume to 70", "turn the volume way down"],
+      "test_paraphrase": ["I can barely hear this", "it's way too loud in here", "silence the audio for a second"]
+    },
+    {
+      "name": "add_todo",
+      "train": ["add milk to my todo list", "put laundry on my task list", "add finish the report to my todos", "create a task to call the plumber", "add pick up dry cleaning to my list", "note down to book flights"],
+      "test_canonical": ["add eggs to my todo list", "put gym on my task list", "add reply to emails to my todos"],
+      "test_paraphrase": ["jot down that I need to renew my passport", "stick grocery shopping on the list", "I should remember to schedule an oil change, save that"]
+    }
+  ]
+}

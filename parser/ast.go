@@ -1,14 +1,19 @@
 package parser
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
 
-	"neuro-vsa/core"
+	"github.com/JGautam09/NeuroVSA/core"
 )
+
+// MaxIndexFiles caps how many .go files IndexDirectory will process, bounding the work an
+// indexing request can trigger on a large or adversarial directory tree.
+const MaxIndexFiles = 5000
 
 // CodeASTIndexer parses Go source files and encodes function/struct AST trees into hyperdimensional vectors.
 type CodeASTIndexer struct {
@@ -101,12 +106,17 @@ func (indexer *CodeASTIndexer) IndexFile(filePath string) ([]FunctionASTVector, 
 func (indexer *CodeASTIndexer) IndexDirectory(dirPath string) (map[string]core.Hypervector, []FunctionASTVector, error) {
 	fileMap := make(map[string]core.Hypervector)
 	var allFuncs []FunctionASTVector
+	indexed := 0
 
 	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if !info.IsDir() && filepath.Ext(path) == ".go" {
+			indexed++
+			if indexed > MaxIndexFiles {
+				return fmt.Errorf("aborted: directory exceeds the %d .go-file index limit", MaxIndexFiles)
+			}
 			funcs, fileHV, parseErr := indexer.IndexFile(path)
 			if parseErr == nil {
 				fileMap[path] = fileHV
