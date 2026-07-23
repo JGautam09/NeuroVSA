@@ -46,3 +46,5 @@ venv/
 *.log
 web/rulegarden/rulegarden.wasm
 web/rulegarden/wasm_exec.js
+rulegarden-wasm
+nvsa-verify
