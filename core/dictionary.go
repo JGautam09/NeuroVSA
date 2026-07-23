@@ -1,6 +1,7 @@
 package core
 
 import (
+	"sort"
 	"sync"
 )
 
@@ -78,29 +79,59 @@ func (td *TokenDictionary) GetOrRegister(token string) Hypervector {
 	return newHV
 }
 
-// LookupToken performs a minimum Hamming distance search across clean dictionary entries
-// to clean up a noisy query hypervector into its exact token string representation.
-// Returns the token string and the minimum Hamming distance.
-func (td *TokenDictionary) LookupToken(query Hypervector) (string, int) {
+// Candidate is one cleanup-search result: a dictionary token and its Hamming distance from
+// the query. Candidate tables are the raw material of glass-box traces.
+type Candidate struct {
+	Token    string `json:"token"`
+	Distance int    `json:"distance"`
+}
+
+// LookupCandidates performs the cleanup search and returns the full ranked candidate table,
+// sorted by ascending distance (ties broken by registration order, matching LookupToken's
+// historical first-minimum semantics). k > 0 limits the table to the k nearest; k <= 0
+// returns every registered token.
+func (td *TokenDictionary) LookupCandidates(query Hypervector, k int) []Candidate {
 	td.mu.RLock()
 	defer td.mu.RUnlock()
 
 	if len(td.hvToToken) == 0 {
+		return nil
+	}
+
+	type ranked struct {
+		Candidate
+		idx int
+	}
+	all := make([]ranked, len(td.hvToToken))
+	for i, pair := range td.hvToToken {
+		all[i] = ranked{Candidate{Token: pair.Token, Distance: HammingDistance(query, pair.HV)}, i}
+	}
+	sort.Slice(all, func(a, b int) bool {
+		if all[a].Distance != all[b].Distance {
+			return all[a].Distance < all[b].Distance
+		}
+		return all[a].idx < all[b].idx
+	})
+
+	if k > 0 && k < len(all) {
+		all = all[:k]
+	}
+	out := make([]Candidate, len(all))
+	for i := range all {
+		out[i] = all[i].Candidate
+	}
+	return out
+}
+
+// LookupToken performs a minimum Hamming distance search across clean dictionary entries
+// to clean up a noisy query hypervector into its exact token string representation.
+// Returns the token string and the minimum Hamming distance.
+func (td *TokenDictionary) LookupToken(query Hypervector) (string, int) {
+	cands := td.LookupCandidates(query, 1)
+	if len(cands) == 0 {
 		return "", -1
 	}
-
-	bestToken := ""
-	minDist := Dimension + 1
-
-	for _, pair := range td.hvToToken {
-		dist := HammingDistance(query, pair.HV)
-		if dist < minDist {
-			minDist = dist
-			bestToken = pair.Token
-		}
-	}
-
-	return bestToken, minDist
+	return cands[0].Token, cands[0].Distance
 }
 
 // Size returns the total count of registered tokens in the dictionary.

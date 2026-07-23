@@ -68,21 +68,23 @@ type Server struct {
 
 // ClientMessage represents incoming JSON packets from the React UI.
 type ClientMessage struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-	Path string `json:"path,omitempty"`
-	Goal string `json:"goal,omitempty"`
+	Type  string `json:"type"`
+	Text  string `json:"text,omitempty"`
+	Path  string `json:"path,omitempty"`
+	Goal  string `json:"goal,omitempty"`
+	Trace bool   `json:"trace,omitempty"` // request a glass-box derivation with the result
 }
 
 // ServerResponse represents outbound JSON packets streamed to the React UI.
 type ServerResponse struct {
-	Type    string `json:"type"`
-	Value   string `json:"value,omitempty"`
-	Dist    int    `json:"dist,omitempty"`
-	Action  string `json:"action,omitempty"`
-	Latency int64  `json:"latency_us,omitempty"`
-	Summary string `json:"summary,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Type    string                  `json:"type"`
+	Value   string                  `json:"value,omitempty"`
+	Dist    int                     `json:"dist,omitempty"`
+	Action  string                  `json:"action,omitempty"`
+	Latency int64                   `json:"latency_us,omitempty"`
+	Summary string                  `json:"summary,omitempty"`
+	Error   string                  `json:"error,omitempty"`
+	Trace   *engine.PredictionTrace `json:"trace,omitempty"` // present when the client requested tracing
 }
 
 // NewServer initializes a new API server instance.
@@ -164,18 +166,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		switch req.Type {
 		case "prompt":
-			s.handlePrompt(conn, req.Text)
+			s.handlePrompt(conn, req.Text, req.Trace)
 		case "index_ast":
 			s.handleIndexAST(conn, req.Path)
 		case "route_tool":
-			s.handleRouteTool(conn, traj, req.Goal)
+			s.handleRouteTool(conn, traj, req.Goal, req.Trace)
 		default:
 			s.sendError(conn, "Unknown message type: "+req.Type)
 		}
 	}
 }
 
-func (s *Server) handlePrompt(conn *websocket.Conn, text string) {
+func (s *Server) handlePrompt(conn *websocket.Conn, text string, trace bool) {
 	words := strings.Fields(text)
 	if len(words) == 0 {
 		s.sendDone(conn)
@@ -184,21 +186,40 @@ func (s *Server) handlePrompt(conn *websocket.Conn, text string) {
 
 	// Encode the seed with the same permute-bind recurrence used during training, so a
 	// multi-word seed aligns with the stored contexts.
-	contextHV := engine.EncodeContext(s.Dict, words)
+	contextHV, seedOps := engine.EncodeContextTraced(s.Dict, words)
 
-	// Execute autoregressive sequence prediction loop
-	tokens, dists := s.Decoder.GenerateSequence(contextHV, 8)
+	// Execute the autoregressive prediction loop — the traced path returns the per-step
+	// derivations (top-5 candidate table + exact ledger contributors) when requested.
+	topK, contributors := 1, false
+	if trace {
+		topK, contributors = 5, true
+	}
+	tokens, dists, gt := s.Decoder.GenerateSequenceTraced(contextHV, 8, topK, contributors)
+	if trace && len(gt.Steps) > 0 {
+		gt.Steps[0].ContextTokens = words
+		gt.Steps[0].ContextOps = append(seedOps, gt.Steps[0].ContextOps...)
+	}
 
 	for i, tok := range tokens {
 		time.Sleep(20 * time.Millisecond) // Stream delay for retro terminal visual effect
-		s.sendJSON(conn, ServerResponse{
+		resp := ServerResponse{
 			Type:  "token",
 			Value: tok,
 			Dist:  dists[i],
-		})
+		}
+		if trace {
+			resp.Trace = &gt.Steps[i]
+		}
+		s.sendJSON(conn, resp)
 	}
 
-	s.sendDone(conn)
+	// The done frame reports why generation stopped; when tracing, it also carries the
+	// final (non-emitted) stop step's derivation, e.g. the noise-floor candidate table.
+	done := ServerResponse{Type: "done", Summary: gt.StopReason}
+	if trace && len(gt.Steps) > len(tokens) {
+		done.Trace = &gt.Steps[len(gt.Steps)-1]
+	}
+	s.sendJSON(conn, done)
 }
 
 func (s *Server) handleIndexAST(conn *websocket.Conn, targetPath string) {
@@ -249,7 +270,7 @@ func (s *Server) resolveIndexPath(requested string) (string, error) {
 	return joined, nil
 }
 
-func (s *Server) handleRouteTool(conn *websocket.Conn, traj *engine.TrajectoryTracker, goal string) {
+func (s *Server) handleRouteTool(conn *websocket.Conn, traj *engine.TrajectoryTracker, goal string, trace bool) {
 	if goal == "" {
 		goal = "fix_bug"
 	}
@@ -260,15 +281,22 @@ func (s *Server) handleRouteTool(conn *websocket.Conn, traj *engine.TrajectoryTr
 		traj.SetGoal(goal)
 	}
 
-	tool, elapsed := traj.SelectNextTool()
-	traj.RecordAction(tool)
+	resp := ServerResponse{Type: "trajectory"}
+	if trace {
+		start := time.Now()
+		tool, tr := traj.SelectNextToolTraced()
+		resp.Action = tool
+		resp.Latency = time.Since(start).Microseconds()
+		resp.Trace = &tr
+	} else {
+		tool, elapsed := traj.SelectNextTool()
+		resp.Action = tool
+		resp.Latency = elapsed.Microseconds()
+	}
+	traj.RecordAction(resp.Action)
+	resp.Summary = traj.GetTrajectorySummary()
 
-	s.sendJSON(conn, ServerResponse{
-		Type:    "trajectory",
-		Action:  tool,
-		Latency: elapsed.Microseconds(),
-		Summary: traj.GetTrajectorySummary(),
-	})
+	s.sendJSON(conn, resp)
 }
 
 func (s *Server) sendJSON(conn *websocket.Conn, resp ServerResponse) {

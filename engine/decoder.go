@@ -63,32 +63,9 @@ func (dec *HDCDecoder) PredictNextToken(contextHV core.Hypervector) (string, int
 
 // GenerateSequence runs an autoregressive sequence prediction loop.
 // Updates context vector at each step: V_context' = ρ(V_context) ⊗ V_token.
+// It delegates to GenerateSequenceTraced (candidate table capped at 1, no contributor scan),
+// so traced and untraced generation share one implementation and cannot diverge.
 func (dec *HDCDecoder) GenerateSequence(startContext core.Hypervector, maxTokens int) ([]string, []int) {
-	var sequence []string
-	var distances []int
-
-	currContext := startContext
-
-	for step := 0; step < maxTokens; step++ {
-		token, dist := dec.PredictNextToken(currContext)
-		if token == "" || token == "<END>" {
-			break
-		}
-		// Stop when the nearest token is essentially noise (confidence collapsed), rather
-		// than padding the output with meaningless tokens up to maxTokens.
-		if float64(dist)/float64(core.Dimension) > dec.StopThreshold {
-			break
-		}
-
-		sequence = append(sequence, token)
-		distances = append(distances, dist)
-
-		// Get hypervector for predicted token
-		tokenHV := dec.Dict.GetOrRegister(token)
-
-		// Autoregressive context shift and bind: V_context' = ρ(V_context) ⊗ V_token
-		currContext = currContext.Permute(1).Bind(tokenHV)
-	}
-
+	sequence, distances, _ := dec.GenerateSequenceTraced(startContext, maxTokens, 1, false)
 	return sequence, distances
 }

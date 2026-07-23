@@ -105,6 +105,49 @@ func TestServerASTFlow(t *testing.T) {
 	}
 }
 
+// Tracing over the wire: token frames must carry candidate tables and ledger provenance, and
+// the done frame must name the stop reason.
+func TestServerTracedPromptFlow(t *testing.T) {
+	conn, cleanup := dialTestServer(t)
+	defer cleanup()
+
+	if err := conn.WriteJSON(ClientMessage{Type: "prompt", Text: "func", Trace: true}); err != nil {
+		t.Fatal(err)
+	}
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+	sawToken := false
+	for {
+		var resp ServerResponse
+		if err := conn.ReadJSON(&resp); err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		switch resp.Type {
+		case "token":
+			sawToken = true
+			if resp.Trace == nil {
+				t.Fatal("token frame missing trace payload")
+			}
+			if len(resp.Trace.Candidates) == 0 || resp.Trace.Candidates[0].Token != resp.Value {
+				t.Fatalf("trace candidates malformed for token %q: %+v", resp.Value, resp.Trace.Candidates)
+			}
+			if len(resp.Trace.Contributors) == 0 {
+				t.Fatalf("token %q trace has no ledger contributors", resp.Value)
+			}
+		case "done":
+			if !sawToken {
+				t.Fatal("no tokens streamed before done")
+			}
+			if resp.Summary == "" {
+				t.Fatal("done frame missing stop reason")
+			}
+			return
+		case "error":
+			t.Fatalf("server error: %s", resp.Error)
+		}
+	}
+}
+
 // The AST indexer must be confined to its root: paths inside are allowed, absolute paths and
 // parent-directory traversal are rejected.
 func TestResolveIndexPathConfinement(t *testing.T) {

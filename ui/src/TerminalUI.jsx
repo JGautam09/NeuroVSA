@@ -10,6 +10,7 @@ export default function TerminalUI() {
   const [input, setInput] = useState('');
   const [status, setStatus] = useState('DISCONNECTED');
   const [stats, setStats] = useState({ dictSize: 0, latencyUs: 0 });
+  const traceOnRef = useRef(false); // glass-box mode: request per-step derivations
 
   const socketRef = useRef(null);
   const terminalEndRef = useRef(null);
@@ -56,6 +57,22 @@ export default function TerminalUI() {
     socketRef.current = ws;
   };
 
+  // Renders a compact glass-box line from a PredictionTrace: runners-up and, when the
+  // ledger identifies it, the exact stored association behind the prediction.
+  const traceLine = (trace) => {
+    const runners = (trace.candidates || [])
+      .slice(1, 4)
+      .map((c) => `${c.token} ${c.distance}`)
+      .join(' · ');
+    const contrib = (trace.contributors || [])
+      .map((c) => c.label || `#${c.id}`)
+      .join(', ');
+    let line = `   ↳ d=${trace.distance}`;
+    if (runners) line += ` | runners-up: ${runners}`;
+    if (contrib) line += ` | memory: ${contrib}`;
+    return line;
+  };
+
   const handleServerMessage = (data) => {
     if (data.type === 'token') {
       tokenBufferRef.current.push(data.value);
@@ -72,13 +89,16 @@ export default function TerminalUI() {
         }
         return newLogs;
       });
+      if (data.trace) addLog('system', traceLine(data.trace));
     } else if (data.type === 'trajectory') {
       addLog('trajectory', `[AGENT ROUTER] Tool: ${data.action} | Latency: ${data.latency_us}µs | ${data.summary}`);
+      if (data.trace) addLog('system', traceLine(data.trace));
       setStats((prev) => ({ ...prev, latencyUs: data.latency_us }));
     } else if (data.type === 'ast_done') {
       addLog('system', `[AST INDEXER] ${data.summary}`);
     } else if (data.type === 'done') {
-      addLog('system', '✓ Sequence generation finished.');
+      addLog('system', `✓ Sequence generation finished${data.summary ? ` (${data.summary})` : ''}.`);
+      if (data.trace) addLog('system', traceLine(data.trace));
     } else if (data.type === 'error') {
       addLog('error', `ERROR: ${data.error}`);
     }
@@ -98,14 +118,17 @@ export default function TerminalUI() {
     setInput('');
     addLog('user', `> ${command}`);
 
-    if (command.startsWith('/route ')) {
+    if (command === '/trace') {
+      traceOnRef.current = !traceOnRef.current;
+      addLog('system', `Glass-box tracing ${traceOnRef.current ? 'ON — responses include candidate tables and memory provenance' : 'OFF'}.`);
+    } else if (command.startsWith('/route ')) {
       const goal = command.replace('/route ', '');
-      socketRef.current.send(JSON.stringify({ type: 'route_tool', goal }));
+      socketRef.current.send(JSON.stringify({ type: 'route_tool', goal, trace: traceOnRef.current }));
     } else if (command.startsWith('/ast')) {
       const path = command.replace('/ast ', '').trim() || '.';
       socketRef.current.send(JSON.stringify({ type: 'index_ast', path }));
     } else {
-      socketRef.current.send(JSON.stringify({ type: 'prompt', text: command }));
+      socketRef.current.send(JSON.stringify({ type: 'prompt', text: command, trace: traceOnRef.current }));
     }
   };
 
@@ -156,7 +179,7 @@ export default function TerminalUI() {
 
       {/* Helper Legend */}
       <footer className="mt-2 text-xs text-[#006622] flex justify-between">
-        <span>Commands: <code>prompt</code> | <code>/route &lt;goal&gt;</code> | <code>/ast &lt;dir&gt;</code></span>
+        <span>Commands: <code>prompt</code> | <code>/route &lt;goal&gt;</code> | <code>/ast &lt;dir&gt;</code> | <code>/trace</code></span>
         <span>Math Core: XOR (⊗) | Permute (ρ) | Majority Vote (⊕)</span>
       </footer>
     </div>
