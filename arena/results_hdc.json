@@ -1,0 +1,31 @@
+{
+  "router": "hdc",
+  "dataset": "structured-routing-v1",
+  "classes": 15,
+  "accuracy": {
+    "canonical": 1,
+    "paraphrase": 0.37777777777777777,
+    "canonical_correct": 45,
+    "canonical_total": 45,
+    "paraphrase_correct": 17,
+    "paraphrase_total": 45
+  },
+  "latency": {
+    "p50_us": 172.708,
+    "p99_us": 336.25,
+    "mean_us": 179.7930071111111,
+    "samples": 4500
+  },
+  "determinism": {
+    "runs_compared": 2,
+    "route_mismatches": 0,
+    "bit_identical_prototypes": true
+  },
+  "cold_add": {
+    "held_out_intent": "add_todo",
+    "add_latency_us": 1188.042,
+    "acc_before": 0,
+    "acc_after": 0.8333333333333334,
+    "test_phrases": 6
+  }
+}
