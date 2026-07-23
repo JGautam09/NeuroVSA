@@ -79,7 +79,21 @@ its learned tool sequence.
 [AGENT ROUTER] Tool: ASTSearch | Latency: 1µs | Goal: "fix_bug", Step Count: 1, History: [ASTSearch]
 ```
 
-### 3. Codebase AST Indexing
+### 3. Glass-Box Tracing
+Type `/trace` to toggle tracing. While on, every prediction and routing result is followed by
+its derivation: ranked runner-up candidates with exact Hamming distances, and—when an exact
+ledger match exists—the matching stored association label(s).
+```text
+/trace
+func
+```
+*Output*:
+```text
+➜ main
+   ↳ d=3157 | runners-up: fmt.Println 4890 · return 4921 | memory: demo[func]→main
+```
+
+### 4. Codebase AST Indexing
 Type `/ast` followed by directory path:
 ```text
 /ast .
@@ -101,9 +115,13 @@ Endpoint: `ws://localhost:8080/ws`
 ```json
 {
   "type": "prompt",
-  "text": "func main"
+  "text": "func main",
+  "trace": true
 }
 ```
+`trace` (optional, also valid on `route_tool`) requests a glass-box derivation with each
+result: the ranked candidate table (up to five prompt candidates over the WebSocket), symbolic
+context ops, stop reason, and any exact-match ledger association(s) for the chosen result.
 
 #### 2. Agent Tool Routing Request
 ```json
@@ -128,9 +146,19 @@ Endpoint: `ws://localhost:8080/ws`
 {
   "type": "token",
   "value": "fmt.Println",
-  "dist": 42
+  "dist": 42,
+  "trace": {
+    "memory_total": 4,
+    "candidates": [{"token": "fmt.Println", "distance": 42}, {"token": "return", "distance": 4890}],
+    "chosen": "fmt.Println",
+    "distance": 42,
+    "normalized": 0.0042,
+    "contributors": [{"id": 2, "label": "demo[func main]→fmt.Println"}]
+  }
 }
 ```
+The `trace` field appears only when requested. The final `done` frame carries the stop reason
+(`end_token`, `noise_floor`, or `max_tokens`) in `summary`.
 
 #### Trajectory Routing Response
 ```json
