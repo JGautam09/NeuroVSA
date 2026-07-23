@@ -115,13 +115,41 @@ func (dec *HDCDecoder) GenerateSequenceTraced(startContext core.Hypervector, max
 	return sequence, distances, gt
 }
 
+// SelectNextToolCertified resolves the next tool like SelectNextTool and additionally
+// issues a replay-verifiable DecisionCertificate over the policy memory: the receipt any
+// holder of the policy pack can re-execute to bit-exact agreement.
+func (tt *TrajectoryTracker) SelectNextToolCertified() (string, PredictionTrace, DecisionCertificate, error) {
+	// State capture and the traced decision happen under ONE lock acquisition, so the
+	// certificate's state is exactly the decision's state; IssueDecision then re-ranks with
+	// the identical tie-break rule, so certificate and live decision cannot disagree.
+	tt.mu.Lock()
+	state := tt.CurrentState
+	tool, trace := tt.selectTracedLocked()
+	tt.mu.Unlock()
+
+	cert, err := IssueDecision(tt.router.policy, state, tt.router.tools)
+	if err != nil {
+		return tool, trace, DecisionCertificate{}, err
+	}
+	if cert.Chosen != tool {
+		// Unreachable by construction (same ranking rule); guard loudly rather than ship a
+		// receipt that contradicts the action.
+		return tool, trace, DecisionCertificate{}, fmt.Errorf("certificate/decision divergence: %q vs %q", cert.Chosen, tool)
+	}
+	return tool, trace, cert, nil
+}
+
 // SelectNextToolTraced resolves the next tool exactly like SelectNextTool and additionally
 // returns the ranked tool table plus the workflow-step association (from the policy ledger)
 // that produced the decision.
 func (tt *TrajectoryTracker) SelectNextToolTraced() (string, PredictionTrace) {
 	tt.mu.Lock()
 	defer tt.mu.Unlock()
+	return tt.selectTracedLocked()
+}
 
+// selectTracedLocked is the traced selection core; caller must hold tt.mu.
+func (tt *TrajectoryTracker) selectTracedLocked() (string, PredictionTrace) {
 	r := tt.router
 	query := r.policy.Matrix().Bind(tt.CurrentState)
 

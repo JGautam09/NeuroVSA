@@ -148,6 +148,32 @@ func TestServerTracedPromptFlow(t *testing.T) {
 	}
 }
 
+// Traced routing must carry a replay-verifiable decision certificate that agrees with the
+// action taken.
+func TestServerRoutingCertificate(t *testing.T) {
+	conn, cleanup := dialTestServer(t)
+	defer cleanup()
+
+	if err := conn.WriteJSON(ClientMessage{Type: "route_tool", Goal: "deploy_service", Trace: true}); err != nil {
+		t.Fatal(err)
+	}
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var resp ServerResponse
+	if err := conn.ReadJSON(&resp); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if resp.Type != "trajectory" || resp.Certificate == nil {
+		t.Fatalf("traced routing lacks certificate: %+v", resp.Type)
+	}
+	c := resp.Certificate
+	if c.Chosen != resp.Action {
+		t.Fatalf("certificate chose %q but action is %q", c.Chosen, resp.Action)
+	}
+	if len(c.Contributors) == 0 || c.MemoryFingerprint == "" {
+		t.Fatalf("certificate missing provenance: %+v", c)
+	}
+}
+
 // The AST indexer must be confined to its root: paths inside are allowed, absolute paths and
 // parent-directory traversal are rejected.
 func TestResolveIndexPathConfinement(t *testing.T) {

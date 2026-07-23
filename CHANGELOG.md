@@ -4,11 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — 0.3.0 "NeuroMesh"
+## [Unreleased] — 0.3.0 "NeuroMesh + ProofRoute"
 
-Mergeable memories: the provenance ledger becomes a true CRDT.
+Mergeable memories (the provenance ledger becomes a true CRDT) and verifiable decisions.
 
 ### Added
+- **Decision certificates (ProofRoute)**: `IssueDecision` produces a machine-checkable
+  receipt — state vector, candidate vocabulary, ranked table, contributors, and the memory's
+  `Fingerprint` — that any holder of the memory can RE-EXECUTE to bit-exact agreement
+  (`VerifyAgainst`). Optional ed25519 signatures over a deterministic binary encoding (never
+  JSON). Traced `/route` responses now carry a certificate; `SelectNextToolCertified` issues
+  them for agent trackers.
+- **Signed lesson packs**: a pack is a mini-replica (fixed site + sequences), so
+  `ApplyPack` = a NeuroMesh merge — idempotent, deduplicating across replicas that applied
+  the same pack — and `RevokePack` tombstones the unit, with revocation propagating through
+  merges. `PackFromMemory` is the authoring flow; ed25519 signing; hex-vector JSON.
+- **`cmd/nvsa-verify`**: CLI that verifies certificates against a memory file (signature +
+  fingerprint + bit-exact re-execution) and packs (signature + installation status).
 - **`Merge(other)`** — associative memories now merge like replicas: ledger union with
   monotone tombstones (forgetting propagates), content-collision detection, and a
   `MergeReport` (added/shared/tombstones/capacity warning against the measured G0 envelope).
