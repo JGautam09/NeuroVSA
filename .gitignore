@@ -44,3 +44,5 @@ venv/
 
 # Logs
 *.log
+web/rulegarden/rulegarden.wasm
+web/rulegarden/wasm_exec.js
