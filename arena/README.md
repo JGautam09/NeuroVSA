@@ -42,7 +42,7 @@ go test ./arena/ -bench BenchmarkRoute -benchmem
 
 See [ARENA_RESULTS.md](ARENA_RESULTS.md) for the generated table. On this dataset, measured on
 one Apple M5 Pro, the tiny static embedding (`model2vec potion-base-8M`) **beat** the HDC router
-on paraphrase accuracy (64% vs 38%), latency (25 vs 92 µs), and cold-add (206 vs 691 µs). HDC's
+on paraphrase accuracy (64% vs 38%), latency (25 vs 168 µs), and cold-add (206 vs 1,172 µs). HDC's
 clear wins were **bit-exact, cross-machine-reproducible prototypes** and **zero model artifact**
 (pure algorithm, ~KB, no downloaded model). Canonical accuracy tied at 100%.
 

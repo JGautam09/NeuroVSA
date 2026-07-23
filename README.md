@@ -23,8 +23,8 @@ To keep the claims honest, the repo ships [**the arena**](arena/) — a head-to-
 | :--- | :--- | :--- | :--- |
 | Canonical-phrasing accuracy | 100% | 100% | tie |
 | **Paraphrase accuracy** | **37.8%** | **64.4%** | **Neural** |
-| Latency p50 (encode + route) | 91.9 µs | 25.0 µs | Neural |
-| Cold-add a new class | 691 µs | 206 µs | Neural |
+| Latency p50 (encode + route) | 168.1 µs | 25.0 µs | Neural |
+| Cold-add a new class | 1,172 µs | 206 µs | Neural |
 | **Bit-exact & portable prototypes** | **yes** | no | **HDC** |
 | **Model artifact required** | **none (~KB of Go)** | yes (downloaded model) | **HDC** |
 

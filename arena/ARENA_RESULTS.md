@@ -8,9 +8,9 @@ on the same machine. Regenerate with the steps in [README.md](README.md).
 | :--- | :--- | :--- | :--- |
 | Canonical accuracy | 100.0% | 100.0% | tie |
 | Paraphrase accuracy | 37.8% | 64.4% | Neural |
-| Latency p50 (encode+route) | 163.3 µs | 25.0 µs | Neural |
-| Latency p99 | 316.8 µs | 49.4 µs | Neural |
-| Cold-add latency | 1091.0 µs | 206.5 µs | Neural |
+| Latency p50 (encode+route) | 168.1 µs | 25.0 µs | Neural |
+| Latency p99 | 414.6 µs | 49.4 µs | Neural |
+| Cold-add latency | 1172.0 µs | 206.5 µs | Neural |
 | Cold-add accuracy (after) | 83.3% | 83.3% | tie |
 | Bit-exact & portable prototypes | yes | no | **HDC** |
 | Within-run route determinism | 0 mismatches | 0 mismatches | tie |

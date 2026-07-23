@@ -37,7 +37,15 @@ jobs:
         run: go build ./...
 
       - name: test (race)
+        if: matrix.os == 'ubuntu-latest'
         run: go test -race ./...
+
+      # Go's race-instrumented test binary aborts on the hosted macOS runner
+      # before tests execute (dyld: missing LC_UUID). Ubuntu remains the race
+      # detector gate; macOS still verifies the ordinary test suite.
+      - name: test
+        if: matrix.os == 'macos-latest'
+        run: go test ./...
 
   crosscompile:
     name: cross-compile (mmap build tags)
