@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"neuro-vsa/core"
+	"github.com/JGautam09/NeuroVSA/core"
 )
 
 func TestIndexFile(t *testing.T) {
