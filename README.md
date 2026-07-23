@@ -35,9 +35,10 @@ To keep the claims honest, the repo ships [**the arena**](arena/) — a head-to-
 ## Highlights
 
 - **Zero external ML dependencies.** Pure-Go bitwise core; the only third-party import is `gorilla/websocket` for the optional API.
-- **Deterministic & auditable.** Integer Hamming distance; with a seeded item memory, encodings are bit-identical across runs and machines.
+- **Deterministic by default.** Token vectors derive from a seeded hash stream (`core.SeededHV`), so encodings are bit-identical across runs and machines — proven by committed golden vectors that CI verifies on both ubuntu and macos.
 - **Tiny & fast.** 1,256 bytes per vector; ~76 ns bind, ~43 ns Hamming, ~286 ns permute (word-level rotate), all zero-allocation.
-- **Instant learning.** Associative memory is a per-bit counter vector: each write is O(D) and independent of corpus size, with genuine `mmap` persistence (and a zero-heap read-only open path).
+- **Instant learning — and exact unlearning.** Associative-memory writes are O(D) counter updates, independent of corpus size; `RemoveAssociation` exactly unlearns one stored association (an O(D) counter decrement — no retraining), leaving the memory bit-identical to never having stored it. Genuine `mmap` persistence with a zero-heap read-only open path.
+- **Glass-box tracing.** Every prediction and routing decision can return its full derivation as data: the symbolic ops applied, the ranked candidate table with exact Hamming distances, and — via the provenance ledger — the precise stored association that produced the result.
 
 ---
 
@@ -85,7 +86,7 @@ Server flags: `-port` (default 8080), `-index-root` (directory the `/ast` indexe
 cd ui && npm install && npm run dev   # open http://localhost:3000
 ```
 
-Commands in the web terminal: a plain prompt like `func main` (autoregressive token generation), `/route fix_bug` (agent tool routing), `/ast .` (index Go files under the index root).
+Commands in the web terminal: a plain prompt like `func main` (autoregressive token generation), `/route fix_bug` (agent tool routing), `/ast .` (index Go files under the index root), and `/trace` (toggle glass-box mode — every result then shows its runners-up and the exact stored memory that produced it).
 
 **Run the arena benchmark:**
 
@@ -125,6 +126,8 @@ Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [develope
 - Bit-sliced `Bundle` (the last non-word-level primitive) to cut encode latency.
 - Arena on standard datasets (CLINC150 / Banking77) and a full-MiniLM baseline.
 - Optional dimensionality reduction (HDC models are typically oversized at 10,000 bits).
+- AST encoder v2: role–filler encoding of parameter/return *types*, statement kinds, and
+  control flow (the current encoder only captures names — see `docs/developer_guide.md`).
 
 ## Contributing & security
 

@@ -44,9 +44,10 @@ The `parser` package extracts relational code structures.
 The `engine` package manages sequence prediction memory and microsecond tool selection.
 
 #### Important Symbols:
-- `engine.AssociativeMemory`: Stores associations as a per-bit vote-counter vector (O(1) per write, independent of corpus size) with memory-mapped (`mmap`) disk persistence; `OpenReadOnly` maps a saved memory for zero-heap inference.
-- `engine.HDCDecoder`: Autoregressive sequence prediction loop. `EncodeContext` builds seed contexts with the same permute-bind recurrence used in training; `StopThreshold` halts generation at the noise floor.
-- `engine.ToolRouter` / `engine.TrajectoryTracker`: A shared learned routing policy plus per-agent trajectory state; goal- and history-dependent tool selection ($\approx 1.03\,\mu\text{s}$ latency).
+- `engine.AssociativeMemory`: Stores associations as a per-bit vote-counter vector (O(D) per write, independent of corpus size) plus a provenance **ledger** (bound vector + label per association). `StoreLabeled` returns an `AssociationID`; `RemoveAssociation(id)` exactly unlearns one association (O(D) counter decrement — bit-identical to never having stored it); `Contributors(probe, 0)` names the association behind a prediction; `Ledger`/`FindByLabel` expose provenance. Memory-mapped (`mmap`) v2 persistence carries the vocab seed and the full ledger; `OpenReadOnly` maps just the matrix for zero-heap inference.
+- `engine.HDCDecoder`: Autoregressive sequence prediction loop. `EncodeContext` builds seed contexts with the same permute-bind recurrence used in training; `StopThreshold` halts generation at the noise floor. `PredictNextTokenTraced` / `GenerateSequenceTraced` return first-class `PredictionTrace`/`GenerationTrace` derivations (candidate tables, symbolic ops, stop reasons, contributors); the untraced methods delegate to them.
+- `engine.ToolRouter` / `engine.TrajectoryTracker`: A shared learned routing policy plus per-agent trajectory state; goal- and history-dependent tool selection ($\approx 1.03\,\mu\text{s}$ latency). `SelectNextToolTraced` names the exact workflow-step association behind each decision.
+- `core.SeededHV(seed, token)` / `core.NewSeededTokenDictionary`: The deterministic item memory — token vectors are bit-identical across runs and machines (golden vectors under `core/testdata/` are verified by CI on ubuntu and macos). `core.NewRandomTokenDictionary` preserves the legacy crypto/rand behavior; `core.LookupCandidates` exposes the full ranked cleanup table.
 
 ---
 
