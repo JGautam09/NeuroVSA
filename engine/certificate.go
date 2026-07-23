@@ -35,10 +35,45 @@ type DecisionCertificate struct {
 	Distance          int              `json:"distance"`
 	Candidates        []core.Candidate `json:"candidates"`
 	Contributors      []Contributor    `json:"contributors,omitempty"`
-	IssuedUnix        int64            `json:"issued_unix,omitempty"` // caller-supplied metadata
-	Note              string           `json:"note,omitempty"`
-	PublicKey         []byte           `json:"public_key,omitempty"`
-	Signature         []byte           `json:"signature,omitempty"`
+	// Policy fields make the ACTED-ON outcome re-derivable rather than merely asserted. When
+	// Basis is set, the certificate declares the action the caller actually executed and the
+	// margin policy under which it was chosen; VerifyAgainst re-derives both from the ranking
+	// (see DerivePolicyOutcome) and requires an exact match. This closes the gap where a raw
+	// cleanup winner (Chosen) differs from the executed action (e.g. an instinct override to
+	// a default action).
+	ExecutedAction string `json:"executed_action,omitempty"`
+	Basis          string `json:"basis,omitempty"` // "lesson" | "generalization" | "instinct"
+	MinMargin      int    `json:"min_margin,omitempty"`
+	InstinctAction string `json:"instinct_action,omitempty"`
+	IssuedUnix     int64  `json:"issued_unix,omitempty"` // caller-supplied metadata
+	Note           string `json:"note,omitempty"`
+	PublicKey      []byte `json:"public_key,omitempty"`
+	Signature      []byte `json:"signature,omitempty"`
+}
+
+// DerivePolicyOutcome maps a ranked cleanup (plus how many of the chosen action's exact
+// contributors exist) to an executed action and basis, under the margin-threshold policy
+// RuleGarden-style callers use. It is the single rule applied at BOTH issue and verify, so a
+// certificate's executed action is reproducible, not just attested:
+//
+//   - total 0 or winner margin < minMargin  → (instinctAction, "instinct")
+//   - an exact contributor exists           → (winner, "lesson")
+//   - otherwise                             → (winner, "generalization")
+func DerivePolicyOutcome(total uint64, cands []core.Candidate, exactContributors, minMargin int, instinctAction string) (action, basis string) {
+	if len(cands) == 0 {
+		return instinctAction, "instinct"
+	}
+	margin := 0
+	if len(cands) >= 2 {
+		margin = cands[1].Distance - cands[0].Distance
+	}
+	if total == 0 || margin < minMargin {
+		return instinctAction, "instinct"
+	}
+	if exactContributors > 0 {
+		return cands[0].Token, "lesson"
+	}
+	return cands[0].Token, "generalization"
 }
 
 // VerifyResult reports the three independent checks a certificate can pass.
@@ -151,6 +186,17 @@ func (c *DecisionCertificate) VerifyAgainst(mem *AssociativeMemory) VerifyResult
 	if !res.DecisionOK {
 		res.Detail = appendDetail(res.Detail, "re-execution does not reproduce the certified decision")
 	}
+
+	// When the certificate declares an executed action under a margin policy, re-derive it
+	// from the re-executed ranking and require an exact match — so the receipt certifies the
+	// action actually taken, not just the raw cleanup winner.
+	if c.Basis != "" {
+		action, basis := DerivePolicyOutcome(mem.Total(), reissued.Candidates, len(reissued.Contributors), c.MinMargin, c.InstinctAction)
+		if action != c.ExecutedAction || basis != c.Basis {
+			res.DecisionOK = false
+			res.Detail = appendDetail(res.Detail, "re-execution does not reproduce the certified executed action/basis")
+		}
+	}
 	return res
 }
 
@@ -209,6 +255,10 @@ func (c *DecisionCertificate) CanonicalBytes() []byte {
 		writeU64(ct.ID.Seq)
 		writeStr(ct.Label)
 	}
+	writeStr(c.ExecutedAction)
+	writeStr(c.Basis)
+	writeU64(uint64(int64(c.MinMargin)))
+	writeStr(c.InstinctAction)
 	writeU64(uint64(c.IssuedUnix))
 	writeStr(c.Note)
 	return b.Bytes()

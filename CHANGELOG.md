@@ -42,9 +42,24 @@ Mergeable memories (the provenance ledger becomes a true CRDT) and verifiable de
 
 ### Changed
 - **Breaking:** `AssociationID` is now composite `(Site, Seq)` — `"site:seq"` in JSON — so
-  distinct writers can never collide; `SetSite` claims writer identity.
+  distinct writers can never collide; `SetSite` claims writer identity (and recomputes the
+  next sequence for the chosen site, so switching to a merged-in site cannot mint a colliding
+  ID).
 - **Breaking:** memory file format is v3 (adds site; composite-ID ledger entries; canonical
   entry order). v1/v2 files are rejected with a descriptive error.
+
+### Security / hardening (post-review)
+- The memory loader now bounds the untrusted ledger count against the file's byte budget
+  before allocating, parses into local state, and **rebuilds the tally and majority vector
+  from the ledger** (never trusting the serialized copies the fingerprint doesn't cover) —
+  so a malformed or matrix-tampered image cannot crash `nvsa-verify` or slip past its anchor.
+- Decision certificates gained re-derivable `ExecutedAction`/`Basis` fields: RuleGarden
+  receipts now certify the action actually taken (instinct overrides included), issued at
+  decision time against the decision-time memory image, so teaching/forgetting afterward
+  cannot make a receipt certify a different historical decision.
+- World replay is bounded (pack byte size, tick horizon, event count, merge-nesting depth),
+  so a pasted pack cannot freeze the browser.
+- `Pack.Memory` rejects labels over the 64 KiB serialization limit.
 
 ## [0.2.0] — "Foundations"
 

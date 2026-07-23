@@ -60,6 +60,9 @@ func (p *Pack) Memory() (*AssociativeMemory, error) {
 	m.site = p.Site
 	maxSeq := uint64(0)
 	for _, e := range p.Entries {
+		if len(e.Label) > maxLabelLen {
+			return nil, fmt.Errorf("pack %q entry seq %d has a %d-byte label exceeding the %d-byte limit", p.Name, e.Seq, len(e.Label), maxLabelLen)
+		}
 		id := AssociationID{Site: p.Site, Seq: e.Seq}
 		if _, dup := m.index[id]; dup {
 			return nil, fmt.Errorf("pack %q has duplicate entry seq %d", p.Name, e.Seq)

@@ -142,10 +142,20 @@ func (am *AssociativeMemory) Site() uint64 {
 // SetSite claims a writer identity for subsequently stored associations. Distinct writers
 // MUST use distinct sites — the merge contract detects same-ID/different-content collisions
 // and refuses them, but cannot repair them.
+//
+// nextSeq is recomputed for the chosen site by scanning the ledger, so switching to a site
+// that already has entries (e.g. one adopted through a merge) cannot mint a colliding ID.
 func (am *AssociativeMemory) SetSite(site uint64) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 	am.site = site
+	maxSeq := uint64(0)
+	for i := range am.ledger {
+		if am.ledger[i].id.Site == site && am.ledger[i].id.Seq > maxSeq {
+			maxSeq = am.ledger[i].id.Seq
+		}
+	}
+	am.nextSeq = maxSeq + 1
 }
 
 // StoreAssociation binds a context vector with a target vector and folds it into the vote
@@ -385,31 +395,40 @@ func (am *AssociativeMemory) LoadFromFile(filename string) error {
 	return am.loadFromImageLocked(data)
 }
 
-// loadFromImageLocked parses a complete v3 image into the receiver. Caller must hold the
-// write lock.
+// minLedgerEntryBytes is the smallest possible serialized ledger entry (site + seq + removed
+// + labelLen + bound vector, zero-length label). Used to bound an untrusted ledger count
+// against the remaining file size before allocating.
+const minLedgerEntryBytes = 8 + 8 + 1 + 2 + matrixBytes
+
+// loadFromImageLocked parses a complete v3 image into local state, rebuilds the vote tally
+// and majority vector FROM the parsed ledger (never trusting the serialized copies — the
+// fingerprint anchor is ledger-derived, so a tampered tally/matrix must not survive), and
+// commits atomically only on success. Caller must hold the write lock.
+//
+// Hardened against malformed input: the ledger count is bounded by the remaining byte budget
+// before allocation, and every field read is length-checked. A parse failure leaves the
+// receiver unchanged (no partial mutation).
 func (am *AssociativeMemory) loadFromImageLocked(data []byte) error {
 	if err := validateHeader(data); err != nil {
 		return err
 	}
 
-	am.total = binary.LittleEndian.Uint64(data[16:])
-	am.vocabSeed = binary.LittleEndian.Uint64(data[24:])
-	am.site = binary.LittleEndian.Uint64(data[32:])
-	off := memHeader
-	for k := 0; k < core.Dimension; k++ {
-		am.counts[k] = binary.LittleEndian.Uint32(data[off+k*4:])
-	}
-	off += countsBytes
-	for i := 0; i < core.NumWords; i++ {
-		am.matrix.Vector[i] = binary.LittleEndian.Uint64(data[off+i*8:])
-	}
-	off += matrixBytes
+	vocabSeed := binary.LittleEndian.Uint64(data[24:])
+	site := binary.LittleEndian.Uint64(data[32:])
+
+	// Skip the serialized counts+matrix: they are metadata for OpenReadOnly's zero-heap
+	// path, but on a full load we rebuild them from the ledger so a tampered matrix cannot
+	// influence a decision that still matches the (ledger-derived) fingerprint.
+	off := memHeader + countsBytes + matrixBytes
 
 	if len(data) < off+4 {
 		return fmt.Errorf("memory file truncated before ledger count")
 	}
 	count := int(binary.LittleEndian.Uint32(data[off:]))
 	off += 4
+	if remaining := len(data) - off; count > remaining/minLedgerEntryBytes {
+		return fmt.Errorf("ledger count %d exceeds the file's byte budget (%d bytes remain)", count, remaining)
+	}
 
 	ledger := make([]ledgerEntry, 0, count)
 	index := make(map[AssociationID]int, count)
@@ -440,14 +459,40 @@ func (am *AssociativeMemory) loadFromImageLocked(data []byte) error {
 		}
 		index[id] = len(ledger)
 		ledger = append(ledger, ledgerEntry{id: id, label: label, removed: removed, bound: bound})
-		if id.Site == am.site && id.Seq > maxOwnSeq {
+		if id.Site == site && id.Seq > maxOwnSeq {
 			maxOwnSeq = id.Seq
 		}
 	}
+
+	// Rebuild the authoritative tally + total from the ACTIVE ledger entries.
+	var counts [core.Dimension]uint32
+	var total uint64
+	for i := range ledger {
+		if ledger[i].removed {
+			continue
+		}
+		w := ledger[i].bound
+		for j := 0; j < core.NumWords; j++ {
+			word := w.Vector[j]
+			base := j * 64
+			for word != 0 {
+				counts[base+bits.TrailingZeros64(word)]++
+				word &= word - 1
+			}
+		}
+		total++
+	}
+
+	// Commit atomically.
+	am.vocabSeed = vocabSeed
+	am.site = site
+	am.counts = counts
+	am.total = total
 	am.ledger = ledger
 	am.index = index
 	am.nextSeq = maxOwnSeq + 1
 	am.readOnly = false
+	am.rematerializeLocked()
 	return nil
 }
 

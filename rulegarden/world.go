@@ -35,6 +35,14 @@ type Creature struct {
 	Y            int       `json:"y"`
 	Brain        *Brain    `json:"-"`
 	LastDecision *Decision `json:"last_decision,omitempty"`
+
+	// Decision-time snapshot for receipts: the brain image AS IT WAS when LastDecision was
+	// made, so a certificate reflects the historical decision even after later teaching or
+	// forgetting. Captured lazily in Step (only when the brain's epoch changed), unexported so
+	// it is neither serialized nor part of the world hash.
+	snapImage []byte
+	snapEpoch uint64
+	hasSnap   bool
 }
 
 // Event is one entry of the world's event log — the replayable source of truth. Percepts and
@@ -82,8 +90,24 @@ func NewWorld(seed uint64) *World {
 
 // ---- event application (the ONLY mutation path besides Step) ----
 
+// Replay/merge safety bounds. A world pack is untrusted input (it can arrive pasted from
+// another player), so its size, tick horizon, event count, and merge-nesting depth are all
+// capped before any synchronous replay runs.
+const (
+	MaxPackBytes    = 8 << 20 // 8 MiB of pack JSON
+	MaxReplayTicks  = 20000   // tick horizon a single pack may drive
+	MaxReplayEvents = 20000   // events a single pack may carry
+	MaxMergeDepth   = 4       // how deep merge_brains packs may nest
+)
+
 // Apply validates an event, applies it, and appends it to the log at the current tick.
 func (w *World) Apply(e Event) error {
+	return w.applyDepth(e, 0)
+}
+
+// applyDepth is Apply with a merge-nesting depth, so recursively replayed foreign packs
+// cannot exceed MaxMergeDepth.
+func (w *World) applyDepth(e Event, depth int) error {
 	e.Tick = w.Tick
 	switch e.Op {
 	case "spawn_creature":
@@ -154,7 +178,7 @@ func (w *World) Apply(e Event) error {
 		if e.ForeignPack == nil {
 			return fmt.Errorf("merge_brains event missing foreign pack")
 		}
-		if err := w.mergeBrains(c, *e.ForeignPack); err != nil {
+		if err := w.mergeBrains(c, *e.ForeignPack, depth); err != nil {
 			return err
 		}
 	default:
@@ -174,6 +198,7 @@ func (w *World) Step() {
 		p, target := w.perceive(c)
 		d := c.Brain.Decide(p)
 		c.LastDecision = &d
+		c.snapshotBrain() // capture the memory image matching THIS decision (for receipts)
 		w.act(c, d.Action, target)
 	}
 	for _, o := range w.Objects {
@@ -253,14 +278,30 @@ func (w *World) Export() Pack {
 // Replay reconstructs a world from a pack by re-running its event log against its seed:
 // events apply at their recorded ticks, interleaved with Steps, ending at pack.Ticks.
 func Replay(p Pack) (*World, error) {
+	return replayDepth(p, 0)
+}
+
+// replayDepth is Replay with the current merge-nesting depth. It enforces the tick, event,
+// and depth bounds before running the synchronous replay loop, so an untrusted pack cannot
+// freeze the caller.
+func replayDepth(p Pack, depth int) (*World, error) {
 	if p.Version != 1 {
 		return nil, fmt.Errorf("unsupported pack version %d", p.Version)
+	}
+	if depth > MaxMergeDepth {
+		return nil, fmt.Errorf("merge nesting exceeds the limit of %d", MaxMergeDepth)
+	}
+	if p.Ticks < 0 || p.Ticks > MaxReplayTicks {
+		return nil, fmt.Errorf("pack tick horizon %d outside [0, %d]", p.Ticks, MaxReplayTicks)
+	}
+	if len(p.Events) > MaxReplayEvents {
+		return nil, fmt.Errorf("pack carries %d events, exceeding the limit of %d", len(p.Events), MaxReplayEvents)
 	}
 	w := NewWorld(p.Seed)
 	i := 0
 	for w.Tick <= p.Ticks {
 		for i < len(p.Events) && p.Events[i].Tick == w.Tick {
-			if err := w.Apply(p.Events[i]); err != nil {
+			if err := w.applyDepth(p.Events[i], depth); err != nil {
 				return nil, fmt.Errorf("replaying event %d: %w", i, err)
 			}
 			i++
@@ -282,6 +323,9 @@ func (w *World) ExportJSON() ([]byte, error) {
 }
 
 func ImportJSON(data []byte) (*World, error) {
+	if len(data) > MaxPackBytes {
+		return nil, fmt.Errorf("pack is %d bytes, exceeding the %d-byte limit", len(data), MaxPackBytes)
+	}
 	var p Pack
 	if err := json.Unmarshal(data, &p); err != nil {
 		return nil, fmt.Errorf("invalid pack: %w", err)
@@ -335,8 +379,11 @@ func (w *World) Hash() string {
 // into the target creature's brain. Atomic: the merges run against a clone of the target
 // memory, which replaces the live brain only if every source merges cleanly — a failed merge
 // (e.g. a same-seed site collision) leaves the world untouched, preserving replay integrity.
-func (w *World) mergeBrains(c *Creature, foreign Pack) error {
-	fw, err := Replay(foreign)
+func (w *World) mergeBrains(c *Creature, foreign Pack, depth int) error {
+	if depth+1 > MaxMergeDepth {
+		return fmt.Errorf("merge nesting exceeds the limit of %d", MaxMergeDepth)
+	}
+	fw, err := replayDepth(foreign, depth+1)
 	if err != nil {
 		return fmt.Errorf("replaying foreign pack: %w", err)
 	}
@@ -368,36 +415,69 @@ func (w *World) MergeBrainsFrom(foreign Pack, creatureID int) error {
 
 // ---- receipts (ProofRoute in costume) ----
 
-// CertifyCreature issues a replay-verifiable DecisionCertificate for the creature's most
-// recent decision, together with the brain's binary image — the pair nvsa-verify needs.
-// Instinct decisions are certifiable too: the certificate records the raw ranking, and its
-// Note declares the basis and the action actually taken (instinct overrides to wander).
+// snapshotBrain lazily captures the brain image whenever the brain has mutated since the last
+// snapshot. Called right after a decision in Step, so snapImage always matches LastDecision.
+func (c *Creature) snapshotBrain() {
+	if c.hasSnap && c.snapEpoch == c.Brain.Epoch() {
+		return
+	}
+	img, err := c.Brain.Memory().MarshalBinary()
+	if err != nil {
+		return // in-memory marshal cannot fail; guard defensively
+	}
+	c.snapImage = img
+	c.snapEpoch = c.Brain.Epoch()
+	c.hasSnap = true
+}
+
+// instinctActionToken is the certificate-space token for the instinct default action.
+var instinctActionToken = "action:" + ActWander
+
+// CertifyCreature issues a replay-verifiable DecisionCertificate for the creature's LAST
+// decision, made against the memory image AS IT WAS at that decision (not the current
+// memory), together with that image — the pair nvsa-verify re-executes. The certificate's
+// ExecutedAction/Basis are re-derivable policy fields, so instinct overrides (raw winner ≠
+// executed action) are certified correctly, not hidden in a note.
 func (w *World) CertifyCreature(id int) (engine.DecisionCertificate, []byte, error) {
 	c, err := w.creature(id)
 	if err != nil {
 		return engine.DecisionCertificate{}, nil, err
 	}
 	d := c.LastDecision
-	if d == nil {
+	if d == nil || !c.hasSnap {
 		return engine.DecisionCertificate{}, nil, fmt.Errorf("creature %d has no decision yet — tick the world", id)
 	}
 
+	// Re-execute against the decision-time image so the fingerprint anchors to the memory
+	// that actually made this decision.
+	mem := engine.NewAssociativeMemory()
+	if err := mem.UnmarshalBinary(c.snapImage); err != nil {
+		return engine.DecisionCertificate{}, nil, err
+	}
 	tokens := make([]string, len(Actions))
 	for i, a := range Actions {
 		tokens[i] = "action:" + a
 	}
-	cert, err := engine.IssueDecision(c.Brain.Memory(), w.Vocab.EncodePercept(d.Percept), tokens)
+	cert, err := engine.IssueDecision(mem, w.Vocab.EncodePercept(d.Percept), tokens)
 	if err != nil {
 		return engine.DecisionCertificate{}, nil, err
 	}
-	cert.Note = fmt.Sprintf("rulegarden world=%d tick=%d creature=%d percept=%s basis=%s acted=%s",
-		w.Seed, w.Tick, id, d.Percept, d.Basis, d.Action)
 
-	brain, err := c.Brain.Memory().MarshalBinary()
-	if err != nil {
-		return engine.DecisionCertificate{}, nil, err
+	cert.MinMargin = MinDecisionMargin
+	cert.InstinctAction = instinctActionToken
+	cert.ExecutedAction, cert.Basis = engine.DerivePolicyOutcome(
+		mem.Total(), cert.Candidates, len(cert.Contributors), MinDecisionMargin, instinctActionToken)
+
+	// Guard: the certified executed action MUST equal what the creature actually did. Same
+	// policy on both sides, so this only fires on a real bug — never ship a contradicting
+	// receipt.
+	if cert.ExecutedAction != "action:"+d.Action || cert.Basis != d.Basis {
+		return engine.DecisionCertificate{}, nil, fmt.Errorf(
+			"receipt/decision divergence for creature %d: certified %s/%s but acted %s/%s",
+			id, cert.ExecutedAction, cert.Basis, "action:"+d.Action, d.Basis)
 	}
-	return cert, brain, nil
+	cert.Note = fmt.Sprintf("rulegarden world=%d creature=%d percept=%s", w.Seed, id, d.Percept)
+	return cert, c.snapImage, nil
 }
 
 // creatureSite derives a brain's writer identity from (world seed, creature id) via a

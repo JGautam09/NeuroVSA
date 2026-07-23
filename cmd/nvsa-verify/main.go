@@ -62,7 +62,16 @@ func verifyCert(certPath, memPath string, requireSig bool) {
 
 	res := cert.VerifyAgainst(mem)
 	fmt.Printf("certificate: %s (engine %s)\n", certPath, cert.EngineVersion)
-	fmt.Printf("  chosen action     : %s (distance %d)\n", cert.Chosen, cert.Distance)
+	if cert.Basis != "" {
+		// Policy-annotated: the executed action is the meaningful one; the raw cleanup winner
+		// may differ (e.g. an instinct override).
+		fmt.Printf("  executed action   : %s (basis %s)\n", cert.ExecutedAction, cert.Basis)
+		if cert.ExecutedAction != cert.Chosen {
+			fmt.Printf("  raw cleanup winner : %s (distance %d)\n", cert.Chosen, cert.Distance)
+		}
+	} else {
+		fmt.Printf("  chosen action     : %s (distance %d)\n", cert.Chosen, cert.Distance)
+	}
 	for _, ct := range cert.Contributors {
 		fmt.Printf("  produced by       : %s  [%s]\n", ct.Label, ct.ID)
 	}

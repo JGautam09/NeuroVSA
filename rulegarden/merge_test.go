@@ -116,6 +116,35 @@ func TestMergeBrainsSameSeedRefusedAtomically(t *testing.T) {
 	}
 }
 
+// P2a: untrusted packs must be bounded — an absurd tick horizon, too many events, and deep
+// merge nesting are all rejected before the synchronous replay loop can run away.
+func TestReplayBounds(t *testing.T) {
+	if _, err := Replay(Pack{Version: 1, Seed: 1, Ticks: MaxReplayTicks + 1}); err == nil {
+		t.Fatal("expected a tick-horizon error")
+	}
+	huge := make([]Event, MaxReplayEvents+1)
+	if _, err := Replay(Pack{Version: 1, Seed: 1, Ticks: 0, Events: huge}); err == nil {
+		t.Fatal("expected an event-count error")
+	}
+	if _, err := ImportJSON(make([]byte, MaxPackBytes+1)); err == nil {
+		t.Fatal("expected an oversized-pack error")
+	}
+
+	// Nested merge_brains packs beyond MaxMergeDepth must be refused. Build a chain deeper
+	// than the limit.
+	inner := Pack{Version: 1, Seed: 99, Ticks: 0}
+	for d := 0; d < MaxMergeDepth+1; d++ {
+		outer := Pack{Version: 1, Seed: uint64(d + 1), Ticks: 0, Events: []Event{
+			{Tick: 0, Op: "spawn_creature", X: 1, Y: 1},
+			{Tick: 0, Op: "merge_brains", Creature: 1, ForeignPack: &inner},
+		}}
+		inner = outer
+	}
+	if _, err := Replay(inner); err == nil {
+		t.Fatal("expected a merge-nesting-depth error")
+	}
+}
+
 // Receipts: a creature's last decision certifies and verifies against its exported brain.
 func TestCertifyCreatureReceipt(t *testing.T) {
 	w := teachWorld(t, 444, "predator", ActMoveAway, "E")
@@ -128,14 +157,12 @@ func TestCertifyCreatureReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cert.Chosen != "action:"+ActMoveAway {
-		t.Fatalf("receipt chose %q", cert.Chosen)
-	}
-	if !strings.Contains(cert.Note, "basis=lesson") || !strings.Contains(cert.Note, "acted=move-away") {
-		t.Fatalf("receipt note lacks context: %q", cert.Note)
+	if cert.ExecutedAction != "action:"+ActMoveAway || cert.Basis != "lesson" {
+		t.Fatalf("receipt executed action/basis = %q/%q, want action:move-away/lesson", cert.ExecutedAction, cert.Basis)
 	}
 
-	// The verifier's exact path: restore the brain from the image, re-execute the receipt.
+	// The verifier's exact path: restore the brain from the image, re-execute the receipt —
+	// this now also re-derives and checks the executed action/basis.
 	restored := engine.NewAssociativeMemory()
 	if err := restored.UnmarshalBinary(brainImg); err != nil {
 		t.Fatal(err)
@@ -154,8 +181,10 @@ func TestCertifyCreatureReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(cert2.Note, "basis=instinct") || !strings.Contains(cert2.Note, "acted=wander") {
-		t.Fatalf("instinct receipt note wrong: %q", cert2.Note)
+	// Instinct: the executed action is the default (wander) even though the raw cleanup
+	// winner is some noise action — and it's a verifiable structured field, not a note.
+	if cert2.Basis != "instinct" || cert2.ExecutedAction != "action:"+ActWander {
+		t.Fatalf("instinct receipt executed/basis = %q/%q, want action:wander/instinct", cert2.ExecutedAction, cert2.Basis)
 	}
 	restored2 := engine.NewAssociativeMemory()
 	if err := restored2.UnmarshalBinary(img2); err != nil {
@@ -163,5 +192,34 @@ func TestCertifyCreatureReceipt(t *testing.T) {
 	}
 	if res := cert2.VerifyAgainst(restored2); !res.OK() {
 		t.Fatalf("instinct receipt failed verification: %+v", res)
+	}
+
+	// Tampering with the executed action must break verification (fields are signed-over and
+	// re-derived).
+	tampered := cert2
+	tampered.ExecutedAction = "action:move-toward"
+	if res := tampered.VerifyAgainst(restored2); res.OK() {
+		t.Fatal("tampered executed action passed verification")
+	}
+
+	// Late-certification guard: teaching AFTER the decision must not change what the retained
+	// receipt certifies (it re-executes against the decision-time image).
+	if err := w.Apply(Event{Op: "teach", Creature: 1,
+		Percept: &PerceptSpec{Sees: "food", Dist: DistNear, Dir: "W"}, Action: ActEat}); err != nil {
+		t.Fatal(err)
+	}
+	certAfter, imgAfter, err := w.CertifyCreature(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if certAfter.MemoryFingerprint != cert.MemoryFingerprint {
+		t.Fatal("certificate drifted after post-decision teaching (should reflect the decision-time memory)")
+	}
+	restoredAfter := engine.NewAssociativeMemory()
+	if err := restoredAfter.UnmarshalBinary(imgAfter); err != nil {
+		t.Fatal(err)
+	}
+	if res := certAfter.VerifyAgainst(restoredAfter); !res.OK() {
+		t.Fatalf("post-teach receipt failed verification: %+v", res)
 	}
 }

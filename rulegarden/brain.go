@@ -46,6 +46,7 @@ type Decision struct {
 type Brain struct {
 	vocab *Vocab
 	mem   *engine.AssociativeMemory
+	epoch uint64 // bumped on every mutation; lets the world snapshot brain images lazily
 }
 
 // NewBrain creates an empty brain over the shared vocabulary.
@@ -54,6 +55,9 @@ func NewBrain(v *Vocab) *Brain {
 	m.SetVocabSeed(v.Dict.Seed())
 	return &Brain{vocab: v, mem: m}
 }
+
+// Epoch returns the brain's mutation counter (changes only on teach/transfer/forget/merge).
+func (b *Brain) Epoch() uint64 { return b.epoch }
 
 // Teach stores one lesson (one-shot — no training loop) and returns its ledger id.
 func (b *Brain) Teach(p PerceptSpec, action string) (engine.AssociationID, error) {
@@ -65,6 +69,7 @@ func (b *Brain) Teach(p PerceptSpec, action string) (engine.AssociationID, error
 		return engine.AssociationID{}, err
 	}
 	label := fmt.Sprintf("%s → %s", p, action)
+	b.epoch++
 	return b.mem.StoreLabeled(b.vocab.EncodePercept(p), actHV, label), nil
 }
 
@@ -100,13 +105,18 @@ func (b *Brain) Transfer(lesson engine.AssociationID, newSees string) (engine.As
 		return zero, err
 	}
 	label := fmt.Sprintf("%s → %s (from lesson %s: %s→%s)", p, action, lesson, oldSees, newSees)
+	b.epoch++
 	return b.mem.StoreLabeled(b.vocab.EncodePercept(p), actHV, label), nil
 }
 
 // Forget exactly unlearns one lesson: the memory becomes bit-identical to never having
 // stored it (O(D) counter decrement in the engine).
 func (b *Brain) Forget(lesson engine.AssociationID) error {
-	return b.mem.RemoveAssociation(lesson)
+	if err := b.mem.RemoveAssociation(lesson); err != nil {
+		return err
+	}
+	b.epoch++
+	return nil
 }
 
 // Lessons returns the brain's ledger (id, label, removed) for the inspector.
@@ -167,6 +177,7 @@ func (b *Brain) Memory() *engine.AssociativeMemory {
 // merge (the scratch clone becomes live only after every source merged cleanly).
 func (b *Brain) replaceMemory(m *engine.AssociativeMemory) {
 	b.mem = m
+	b.epoch++
 }
 
 func (b *Brain) findLesson(id engine.AssociationID) (engine.AssociationRecord, error) {
