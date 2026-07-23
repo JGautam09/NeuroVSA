@@ -36,6 +36,15 @@ const (
 	maxLabelLen  = 65535
 )
 
+// RecommendedMaxActiveAssociations is the measured safe ceiling for ACTIVE associations in a
+// single memory when recall happens over a small cleanup vocabulary (~4 candidates), as in a
+// RuleGarden creature brain. The G0 capacity benchmark (engine/capacity_test.go, results in
+// BENCHMARKS.md) shows 100% recall with comfortable margins through this count — quasi-
+// orthogonal contexts hold 100% to K=256 and ~98.6% at K=512, and the full 96-percept
+// structured space recalls perfectly. Callers that exceed this (e.g. after a NeuroMesh merge)
+// should warn: recall degrades gracefully toward the noise floor, it does not fail loudly.
+const RecommendedMaxActiveAssociations = 128
+
 // AssociationID identifies one stored association. IDs are assigned sequentially from 1 and
 // are never reused; removal tombstones the entry rather than compacting the ledger.
 type AssociationID uint64

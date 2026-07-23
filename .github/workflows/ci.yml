@@ -55,3 +55,6 @@ jobs:
             echo "== $target =="
             GOOS=${target%/*} GOARCH=${target#*/} go build ./...
           done
+
+      - name: build for the browser (js/wasm)
+        run: GOOS=js GOARCH=wasm go build ./...

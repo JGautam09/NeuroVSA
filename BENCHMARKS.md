@@ -27,6 +27,32 @@ The benchmark harness is committed alongside the code:
 | `RemoveAssociation` | ~10.9 µs | Exact unlearning: O(D) counter decrement + rematerialize, zero-alloc |
 | `SelectNextTool` | ~1.03 µs | Policy unbind + Hamming cleanup over the tool set |
 
+## Memory capacity (G0 gate)
+
+How many (context → action) associations fit in ONE associative memory before recall
+degrades? Measured by `engine/capacity_test.go` with cleanup over a 4-action vocabulary
+(the RuleGarden creature-brain regime). Reproduce with:
+
+```bash
+go test ./engine/ -run CapacityCurve -v
+```
+
+| K (associations) | Random contexts | Structured percepts (shared fillers) |
+| ---: | :--- | :--- |
+| 4 | 100% (margin ~1862 bits) | 100% (margin ~938) |
+| 32 | 100% (~653) | 100% (~841) |
+| 64 | 100% (~449) | 100% (~853) |
+| 96 | — | **100% (~846) — full RuleGarden percept space** |
+| 128 | 100% (~314) | — |
+| 256 | 100% (~211) | — |
+| 512 | 98.6% (~134) | — |
+
+**Interpretation:** margins shrink ~1/√K exactly as VSA theory predicts; recall stays perfect
+through K=256 for orthogonal contexts and across the entire structured percept space. The
+engine exposes `RecommendedMaxActiveAssociations = 128` as the documented safe ceiling —
+beyond it, degradation is graceful (toward the noise floor), not loud. Single memories are
+**not** unbounded stores; that is a design envelope, stated plainly.
+
 ## Notes
 
 - `Permute` is implemented as an O(NumWords) word-level rotate (two linear multiword shifts +
