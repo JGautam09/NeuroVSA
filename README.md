@@ -99,15 +99,41 @@ go test ./arena/ -run TestArenaReport -v       # merge → arena/ARENA_RESULTS.m
 
 ---
 
+## RuleGarden — the flagship demo
+
+A deterministic artificial-life world whose creatures carry glass-box VSA brains, running
+entirely in a browser tab (Go → WASM, no model file, no server calls). It turns the engine's
+guarantees into game verbs:
+
+- **Teach** one-shot lessons; **transfer** them by analogy; **forget** them *exactly* — the
+  action table returns bit-identical to before the lesson existed.
+- **Merge brains across worlds** (a CRDT merge with proven convergence): your creature
+  absorbs a friend's lessons, each keeping its foreign site id in the ledger.
+- **Download a decision receipt** and re-execute it anywhere:
+  `nvsa-verify -cert receipt.json -memory brain.bin` confirms the decision bit-for-bit.
+- Every decision is labeled **lesson / generalization / instinct**, with the causing
+  association named.
+
+```bash
+sh web/rulegarden/build.sh && python3 -m http.server 8090 -d web/rulegarden
+# open http://localhost:8090
+```
+
+Guide and honest limits (measured brain capacity, merge caveats): [`rulegarden/README.md`](rulegarden/README.md).
+
+---
+
 ## Architecture
 
 ```
-core/     VSA vector physics — bind/bundle/permute, POPCNT Hamming, item-memory dictionary
-parser/   Go AST → hypervector structural encoder
-engine/   Counter-vector associative memory (+ mmap), HDC decoder, agent trajectory router
-api/      Concurrent WebSocket server (per-connection agent state, loopback origin check)
-ui/       React 18 + Tailwind streaming terminal
-arena/    Honest HDC-vs-neural routing benchmark (Go + Python)
+core/       VSA vector physics — bind/bundle/permute, POPCNT Hamming, seeded item memory
+parser/     Go AST → hypervector structural encoder
+engine/     CRDT associative memory (ledger + mmap + merge), decoder, router, certificates
+rulegarden/ Deterministic teachable world (headless core; wasm bridge in cmd/, page in web/)
+api/        Concurrent WebSocket server (per-connection agent state, loopback origin check)
+ui/         React 18 + Tailwind streaming terminal
+arena/      Honest HDC-vs-neural routing benchmark (Go + Python)
+cmd/        rulegarden-wasm bridge · nvsa-verify receipt/pack verifier
 ```
 
 Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [developer guide](docs/developer_guide.md) · [user manual](docs/user_manual.md).

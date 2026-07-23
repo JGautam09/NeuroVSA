@@ -21,6 +21,12 @@ Mergeable memories (the provenance ledger becomes a true CRDT) and verifiable de
   merges. `PackFromMemory` is the authoring flow; ed25519 signing; hex-vector JSON.
 - **`cmd/nvsa-verify`**: CLI that verifies certificates against a memory file (signature +
   fingerprint + bit-exact re-execution) and packs (signature + installation status).
+- **RuleGarden integration (the arc closes)**: creature brains claim deterministic per-world
+  sites, enabling **merge brains across worlds** — logged as a replayable event that embeds
+  the foreign pack (merged worlds still replay bit-exactly; failed merges are atomic no-ops).
+  The creature inspector issues **downloadable decision receipts** (+ brain image) that
+  `nvsa-verify` re-executes natively — demonstrated end-to-end from a browser-issued receipt.
+  `MarshalBinary`/`UnmarshalBinary` expose the v3 memory image for wasm and atomic clones.
 - **`Merge(other)`** — associative memories now merge like replicas: ledger union with
   monotone tombstones (forgetting propagates), content-collision detection, and a
   `MergeReport` (added/shared/tombstones/capacity warning against the measured G0 envelope).
