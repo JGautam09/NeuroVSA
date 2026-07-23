@@ -89,11 +89,20 @@ Agent states are tracked continuously without any probabilistic LLM sampling:
 
 $$\text{State}_{t+1} = \rho^1(\text{State}_t) \otimes V_{\text{action}_{t+1}}$$
 
-### Tool Selection Algorithm ($< 1\text{ ms}$)
-1. For each registered candidate tool $T_j$:
-   $$\text{CandidateState}_j = \rho^1(\text{State}_t) \otimes V_{T_j}$$
-2. Calculate Hamming distance against target goal vector $V_{\text{Goal}}$:
-   $$d_j = d_H(\text{CandidateState}_j, V_{\text{Goal}})$$
-3. Select tool $T^*$ with minimum distance $d^* = \min_j d_j$.
+### Learned Routing Policy
 
-Execution latency: **$51.79\,\mu\text{s}$**.
+Routing is driven by a **policy associative memory** rather than a bare distance-to-goal
+comparison. Registering a workflow (a goal plus its ordered tool sequence) stores a
+`state → next-action` association at every step, exactly as an agent advances at runtime:
+
+$$V_{\text{Policy}} = \bigoplus_{\text{workflows}} \; \bigoplus_{k} \big(\text{State}_k \otimes V_{\text{action}_{k+1}}\big), \qquad \text{State}_{k+1} = \rho^1(\text{State}_k) \otimes V_{\text{action}_{k+1}}$$
+
+### Tool Selection Algorithm ($< 1\text{ ms}$)
+1. Unbind the current trajectory state against the policy memory:
+   $$V_{\text{query}} = V_{\text{Policy}} \otimes \text{State}_t$$
+2. Clean up $V_{\text{query}}$ against the tool vocabulary (minimum Hamming distance):
+   $$T^* = \arg\min_{T_j} \; d_H(V_{\text{query}}, V_{T_j})$$
+3. Record $T^*$ to advance the trajectory, so successive selections walk the learned workflow.
+
+Because the state encodes both the goal and the actions taken so far, selection is
+goal- and history-dependent. Execution latency: **$\approx 1.03\,\mu\text{s}$** (Apple M5 Pro).
