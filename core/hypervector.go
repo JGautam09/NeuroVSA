@@ -94,6 +94,7 @@ func (hv Hypervector) Permute(shift int) Hypervector {
 			res.SetBit(m)
 		}
 	}
+	res.Vector[NumWords-1] &= LastWordMask
 	return res
 }
 

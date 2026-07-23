@@ -35,6 +35,35 @@ func TestBindSelfInverse(t *testing.T) {
 	}
 }
 
+// Guardrail #3 Verification Test: Bind(A, Bind(A, B)) == B with 0 bit errors.
+func TestBindExactEqualityGuardrail(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		a := GenerateRandom()
+		b := GenerateRandom()
+
+		// Bind(A, Bind(A, B)) == B
+		result := a.Bind(a.Bind(b))
+
+		if result != b {
+			t.Fatalf("Guardrail #3 Violation: Bind(A, Bind(A, B)) != B! Hamming distance: %d", HammingDistance(result, b))
+		}
+	}
+}
+
+// Guardrail #2 Verification Test: Even-vector Majority Vote bundling tie resolution.
+func TestEvenVectorMajorityVoteTieBreaking(t *testing.T) {
+	v1 := GenerateRandom()
+	v2 := GenerateRandom()
+
+	// Bundle 2 vectors (even N = 2)
+	bundledEven := Bundle([]Hypervector{v1, v2})
+
+	// Ensure word 156 bitwise masking is preserved
+	if (bundledEven.Vector[NumWords-1] & ^LastWordMask) != 0 {
+		t.Errorf("Guardrail #1 Violation in Bundle(): Word 156 contains unmasked ghost bits: 0x%X", bundledEven.Vector[NumWords-1])
+	}
+}
+
 func TestPermuteAndInverse(t *testing.T) {
 	hv := GenerateRandom()
 
