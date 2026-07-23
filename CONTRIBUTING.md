@@ -14,9 +14,10 @@ Contributions reach `main` through pull requests only; please do not push direct
 4. Open a pull request against `JGautam09/NeuroVSA:main`, complete the PR template, and respond
    to review and CI feedback.
 
-By submitting a contribution, you agree that it may be distributed under this repository's
-[MIT License](LICENSE). NeuroVSA does not require a contributor license agreement or Developer
-Certificate of Origin sign-off at this time.
+By submitting a contribution, you agree that it is licensed under this repository's
+[Apache License 2.0](LICENSE) — the inbound-equals-outbound model of Apache-2.0 § 5. NeuroVSA
+does not require a separate contributor license agreement or Developer Certificate of Origin
+sign-off at this time.
 
 ## Development workflow
 
