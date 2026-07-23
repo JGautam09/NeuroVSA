@@ -102,7 +102,7 @@ function renderInspector() {
   $('lessons').innerHTML = `<tr><th>id</th><th>lesson</th><th></th></tr>` + rows;
   for (const btn of $('lessons').querySelectorAll('button[data-forget]')) {
     btn.onclick = () => {
-      refresh(call('apply', JSON.stringify({ op: 'forget', creature: selected, lesson: Number(btn.dataset.forget) })));
+      refresh(call('apply', JSON.stringify({ op: 'forget', creature: selected, lesson: btn.dataset.forget })));
       log(`forgot lesson ${btn.dataset.forget} — memory is now bit-identical to never having learned it`);
     };
   }
@@ -169,7 +169,7 @@ $('teachCurrent').onclick = () => {
 
 $('transfer').onclick = () => {
   if (!selected) return;
-  const lesson = Number($('xLesson').value);
+  const lesson = $('xLesson').value;
   refresh(call('apply', JSON.stringify({ op: 'transfer', creature: selected, lesson, new_sees: $('xSees').value })));
   log(`transferred lesson ${lesson} by analogy → subject ${$('xSees').value} (the dollar-of-Mexico move)`);
 };

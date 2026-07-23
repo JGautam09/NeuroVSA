@@ -58,11 +58,11 @@ func NewBrain(v *Vocab) *Brain {
 // Teach stores one lesson (one-shot — no training loop) and returns its ledger id.
 func (b *Brain) Teach(p PerceptSpec, action string) (engine.AssociationID, error) {
 	if err := ValidPercept(p); err != nil {
-		return 0, err
+		return engine.AssociationID{}, err
 	}
 	actHV, err := b.vocab.ActionHV(action)
 	if err != nil {
-		return 0, err
+		return engine.AssociationID{}, err
 	}
 	label := fmt.Sprintf("%s → %s", p, action)
 	return b.mem.StoreLabeled(b.vocab.EncodePercept(p), actHV, label), nil
@@ -78,27 +78,28 @@ func (b *Brain) Teach(p PerceptSpec, action string) (engine.AssociationID, error
 // exact operation, not an approximation. The unchanged roles produce literally identical
 // bound vectors, which is what makes this a role-preserving analogy.
 func (b *Brain) Transfer(lesson engine.AssociationID, newSees string) (engine.AssociationID, error) {
+	var zero engine.AssociationID
 	rec, err := b.findLesson(lesson)
 	if err != nil {
-		return 0, err
+		return zero, err
 	}
 	p, action, err := parseLessonLabel(rec.Label)
 	if err != nil {
-		return 0, err
+		return zero, err
 	}
 	if p.Sees == SeesNothing {
-		return 0, fmt.Errorf("lesson %d has no substitutable subject", lesson)
+		return zero, fmt.Errorf("lesson %s has no substitutable subject", lesson)
 	}
 	oldSees := p.Sees
 	p.Sees = newSees
 	if err := ValidPercept(p); err != nil {
-		return 0, err
+		return zero, err
 	}
 	actHV, err := b.vocab.ActionHV(action)
 	if err != nil {
-		return 0, err
+		return zero, err
 	}
-	label := fmt.Sprintf("%s → %s (from lesson %d: %s→%s)", p, action, lesson, oldSees, newSees)
+	label := fmt.Sprintf("%s → %s (from lesson %s: %s→%s)", p, action, lesson, oldSees, newSees)
 	return b.mem.StoreLabeled(b.vocab.EncodePercept(p), actHV, label), nil
 }
 
@@ -166,12 +167,12 @@ func (b *Brain) findLesson(id engine.AssociationID) (engine.AssociationRecord, e
 	for _, rec := range b.mem.Ledger() {
 		if rec.ID == id {
 			if rec.Removed {
-				return rec, fmt.Errorf("lesson %d has been forgotten", id)
+				return rec, fmt.Errorf("lesson %s has been forgotten", id)
 			}
 			return rec, nil
 		}
 	}
-	return engine.AssociationRecord{}, fmt.Errorf("unknown lesson %d", id)
+	return engine.AssociationRecord{}, fmt.Errorf("unknown lesson %s", id)
 }
 
 // parseLessonLabel recovers the symbolic percept and action from a lesson label of the form

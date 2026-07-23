@@ -40,16 +40,16 @@ type Creature struct {
 // Event is one entry of the world's event log — the replayable source of truth. Percepts and
 // actions are symbolic (strings), never vectors, so packs stay tiny and human-readable.
 type Event struct {
-	Tick     int                  `json:"tick"`
-	Op       string               `json:"op"` // spawn_creature | spawn_object | teach | transfer | forget
-	Kind     Kind                 `json:"kind,omitempty"`
-	X        int                  `json:"x,omitempty"`
-	Y        int                  `json:"y,omitempty"`
-	Creature int                  `json:"creature,omitempty"`
-	Percept  *PerceptSpec         `json:"percept,omitempty"`
-	Action   string               `json:"action,omitempty"`
-	Lesson   engine.AssociationID `json:"lesson,omitempty"`
-	NewSees  string               `json:"new_sees,omitempty"`
+	Tick     int                   `json:"tick"`
+	Op       string                `json:"op"` // spawn_creature | spawn_object | teach | transfer | forget
+	Kind     Kind                  `json:"kind,omitempty"`
+	X        int                   `json:"x,omitempty"`
+	Y        int                   `json:"y,omitempty"`
+	Creature int                   `json:"creature,omitempty"`
+	Percept  *PerceptSpec          `json:"percept,omitempty"`
+	Action   string                `json:"action,omitempty"`
+	Lesson   *engine.AssociationID `json:"lesson,omitempty"` // "site:seq" in JSON
+	NewSees  string                `json:"new_sees,omitempty"`
 }
 
 // World is fully defined by (Seed, Events): replaying the log against the seed reproduces a
@@ -120,7 +120,10 @@ func (w *World) Apply(e Event) error {
 		if err != nil {
 			return err
 		}
-		if _, err := c.Brain.Transfer(e.Lesson, e.NewSees); err != nil {
+		if e.Lesson == nil {
+			return fmt.Errorf("transfer event missing lesson id")
+		}
+		if _, err := c.Brain.Transfer(*e.Lesson, e.NewSees); err != nil {
 			return err
 		}
 	case "forget":
@@ -128,7 +131,10 @@ func (w *World) Apply(e Event) error {
 		if err != nil {
 			return err
 		}
-		if err := c.Brain.Forget(e.Lesson); err != nil {
+		if e.Lesson == nil {
+			return fmt.Errorf("forget event missing lesson id")
+		}
+		if err := c.Brain.Forget(*e.Lesson); err != nil {
 			return err
 		}
 	default:
@@ -297,7 +303,7 @@ func (w *World) Hash() string {
 			h.Write(buf[:])
 		}
 		for _, rec := range c.Brain.Lessons() {
-			fmt.Fprintf(h, "L|%d|%s|%v\n", rec.ID, rec.Label, rec.Removed)
+			fmt.Fprintf(h, "L|%s|%s|%v\n", rec.ID, rec.Label, rec.Removed)
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))

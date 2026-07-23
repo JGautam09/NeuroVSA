@@ -57,7 +57,7 @@ func state() any {
 	for _, c := range world.Creatures {
 		cv := creatureView{ID: c.ID, X: c.X, Y: c.Y, Decision: c.LastDecision}
 		for _, rec := range c.Brain.Lessons() {
-			cv.Lessons = append(cv.Lessons, lessonView{ID: uint64(rec.ID), Label: rec.Label, Removed: rec.Removed})
+			cv.Lessons = append(cv.Lessons, lessonView{ID: rec.ID.String(), Label: rec.Label, Removed: rec.Removed})
 		}
 		v.Creatures = append(v.Creatures, cv)
 	}
@@ -65,7 +65,7 @@ func state() any {
 }
 
 type lessonView struct {
-	ID      uint64 `json:"id"`
+	ID      string `json:"id"`
 	Label   string `json:"label"`
 	Removed bool   `json:"removed"`
 }

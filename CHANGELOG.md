@@ -4,7 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — 0.2.0 "Foundations"
+## [Unreleased] — 0.3.0 "NeuroMesh"
+
+Mergeable memories: the provenance ledger becomes a true CRDT.
+
+### Added
+- **`Merge(other)`** — associative memories now merge like replicas: ledger union with
+  monotone tombstones (forgetting propagates), content-collision detection, and a
+  `MergeReport` (added/shared/tombstones/capacity warning against the measured G0 envelope).
+  Commutativity, associativity, idempotence, and convergence under gossip interleavings are
+  proven by property tests with bit-exact fingerprint equality.
+- **`Fingerprint()`** — canonical SHA-256 over the convergent state (ledger set + tombstones
+  + vocab seed, writer identity excluded); also the memory-state anchor for upcoming decision
+  certificates.
+- **RuleGarden**: deterministic teachable world (headless Go package, wasm bridge, browser
+  page) — teach one-shot lessons, transfer by analogy, forget exactly; glass-box decisions
+  with lesson/generalization/instinct bases; worlds export as seed+event-log packs with
+  golden-tested replay determinism. G0 capacity gate published in BENCHMARKS.md.
+
+### Changed
+- **Breaking:** `AssociationID` is now composite `(Site, Seq)` — `"site:seq"` in JSON — so
+  distinct writers can never collide; `SetSite` claims writer identity.
+- **Breaking:** memory file format is v3 (adds site; composite-ID ledger entries; canonical
+  entry order). v1/v2 files are rejected with a descriptive error.
+
+## [0.2.0] — "Foundations"
 
 Determinism, provenance, and exact unlearning — the three direction-agnostic foundations
 identified by external review. Each closes a gap between a documented claim and the code.

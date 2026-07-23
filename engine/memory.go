@@ -4,13 +4,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/bits"
+	"sort"
 	"sync"
 
 	"github.com/JGautam09/NeuroVSA/core"
 )
 
-// On-disk format (v2). The file is a fixed header + counters + matrix, followed by a
-// variable-length association ledger:
+// On-disk format (v3). The file is a fixed header + counters + matrix, followed by a
+// variable-length association ledger in canonical (site, seq) order:
 //
 //	[0:4]    magic "NVSA"
 //	[4:6]    version (uint16, little-endian)
@@ -19,17 +20,18 @@ import (
 //	[12:16]  numWords  (uint32) — sanity check against the build
 //	[16:24]  total     (uint64) — number of ACTIVE (non-removed) associations
 //	[24:32]  vocabSeed (uint64) — seed of the TokenDictionary this memory was built against
-//	[32 .. +countsBytes)  counts[Dimension] (uint32 LE) — the per-bit vote tally
+//	[32:40]  site      (uint64) — this memory's writer identity (NEW in v3)
+//	[40 .. +countsBytes)  counts[Dimension] (uint32 LE) — the per-bit vote tally
 //	[.. +matrixBytes)     matrix[NumWords]  (uint64 LE) — materialized majority vector
 //	[..]     ledgerCount (uint32), then per entry:
-//	         id (uint64) · removed (uint8) · labelLen (uint16) · label bytes · bound[NumWords] (uint64 LE)
+//	         site (u64) · seq (u64) · removed (u8) · labelLen (u16) · label bytes · bound[NumWords] (u64 LE)
 //
-// v1 files (no vocabSeed, no ledger) are rejected with a descriptive error — the project is
-// pre-1.0 and v1 predates provenance, so there is nothing meaningful to migrate.
+// v1/v2 files are rejected with a descriptive error — pre-1.0, and they predate site-scoped
+// identity, so there is nothing meaningful to migrate.
 const (
 	memMagic     = "NVSA"
-	memVersion   = uint16(2)
-	memHeader    = 32
+	memVersion   = uint16(3)
+	memHeader    = 40
 	countsBytes  = core.Dimension * 4
 	matrixBytes  = core.NumWords * 8
 	memFixedSize = memHeader + countsBytes + matrixBytes
@@ -41,13 +43,44 @@ const (
 // RuleGarden creature brain. The G0 capacity benchmark (engine/capacity_test.go, results in
 // BENCHMARKS.md) shows 100% recall with comfortable margins through this count — quasi-
 // orthogonal contexts hold 100% to K=256 and ~98.6% at K=512, and the full 96-percept
-// structured space recalls perfectly. Callers that exceed this (e.g. after a NeuroMesh merge)
-// should warn: recall degrades gracefully toward the noise floor, it does not fail loudly.
+// structured space recalls perfectly. Callers that exceed this (e.g. after a merge) should
+// warn: recall degrades gracefully toward the noise floor, it does not fail loudly.
 const RecommendedMaxActiveAssociations = 128
 
-// AssociationID identifies one stored association. IDs are assigned sequentially from 1 and
-// are never reused; removal tombstones the entry rather than compacting the ledger.
-type AssociationID uint64
+// AssociationID identifies one stored association globally: Site is the writer's identity,
+// Seq that writer's monotonic counter. Composite identity is what makes memories MERGEABLE —
+// two players' lessons can never collide as long as they write under different sites. The
+// text form is "site:seq" (also used in JSON), and IDs are never reused: removal tombstones
+// the entry rather than compacting the ledger.
+type AssociationID struct {
+	Site uint64
+	Seq  uint64
+}
+
+func (id AssociationID) String() string {
+	return fmt.Sprintf("%d:%d", id.Site, id.Seq)
+}
+
+// MarshalText / UnmarshalText give IDs the "site:seq" wire form in JSON and map keys.
+func (id AssociationID) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
+func (id *AssociationID) UnmarshalText(b []byte) error {
+	var site, seq uint64
+	if _, err := fmt.Sscanf(string(b), "%d:%d", &site, &seq); err != nil {
+		return fmt.Errorf("invalid association id %q (want \"site:seq\")", b)
+	}
+	id.Site, id.Seq = site, seq
+	return nil
+}
+
+func (id AssociationID) less(other AssociationID) bool {
+	if id.Site != other.Site {
+		return id.Site < other.Site
+	}
+	return id.Seq < other.Seq
+}
 
 // AssociationRecord is the public view of one ledger entry.
 type AssociationRecord struct {
@@ -62,35 +95,57 @@ type Contributor struct {
 	Label string        `json:"label,omitempty"`
 }
 
-// ledgerEntry is the provenance record for one stored association. Invariant: the entry with
-// ID i lives at ledger[i-1].
+// ledgerEntry is the provenance record for one stored association.
 type ledgerEntry struct {
+	id      AssociationID
 	label   string
 	removed bool
 	bound   core.Hypervector
 }
 
 // AssociativeMemory stores hypervector associations as a per-bit vote tally plus a
-// provenance ledger.
-//
-// The tally (counts/total) makes every write O(D), independent of how many associations were
-// stored before. The ledger records each association's bound vector and label — the price of
-// provenance (~1.26 KB/association): it is what makes REMOVAL exact (you cannot delete what
-// you cannot identify) and what lets traces name the association behind a prediction. Writes
-// never re-bundle; the ledger is only consulted on removal and provenance queries.
+// provenance ledger — and since v0.3.0 the ledger IS the source of truth: a two-phase set
+// (grow-only entries + monotone tombstones) keyed by globally unique (site, seq) IDs, with
+// the tally and matrix as a materialized view. That structure is what makes memories
+// mergeable with CRDT guarantees (see Merge): union is commutative, associative, and
+// idempotent by construction.
 type AssociativeMemory struct {
 	mu        sync.RWMutex
 	counts    [core.Dimension]uint32
 	total     uint64
-	matrix    core.Hypervector // cached majority vector, kept in sync on every store/remove
+	matrix    core.Hypervector // cached majority vector, kept in sync on every mutation
 	readOnly  bool             // true for OpenReadOnly instances (counters/ledger not loaded)
 	vocabSeed uint64           // metadata: item-memory seed the vocabulary was built with
-	ledger    []ledgerEntry
+	site      uint64           // writer identity for new associations
+	nextSeq   uint64           // this writer's monotonic sequence (starts at 1)
+	ledger    []ledgerEntry    // append order; canonical (site, seq) order is derived on demand
+	index     map[AssociationID]int
 }
 
-// NewAssociativeMemory initializes an empty associative memory instance.
+// NewAssociativeMemory initializes an empty associative memory at site 0. Writers that
+// intend to merge with peers must claim a distinct site via SetSite BEFORE storing.
 func NewAssociativeMemory() *AssociativeMemory {
-	return &AssociativeMemory{vocabSeed: core.DefaultSeed}
+	return &AssociativeMemory{
+		vocabSeed: core.DefaultSeed,
+		nextSeq:   1,
+		index:     make(map[AssociationID]int),
+	}
+}
+
+// Site returns this memory's writer identity.
+func (am *AssociativeMemory) Site() uint64 {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	return am.site
+}
+
+// SetSite claims a writer identity for subsequently stored associations. Distinct writers
+// MUST use distinct sites — the merge contract detects same-ID/different-content collisions
+// and refuses them, but cannot repair them.
+func (am *AssociativeMemory) SetSite(site uint64) {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	am.site = site
 }
 
 // StoreAssociation binds a context vector with a target vector and folds it into the vote
@@ -113,24 +168,21 @@ func (am *AssociativeMemory) StoreLabeled(contextHV, targetHV core.Hypervector, 
 	}
 
 	bound := contextHV.Bind(targetHV)
-	for i := 0; i < core.NumWords; i++ {
-		w := bound.Vector[i]
-		base := i * 64
-		for w != 0 {
-			am.counts[base+bits.TrailingZeros64(w)]++
-			w &= w - 1 // clear lowest set bit
-		}
-	}
+	am.addBits(bound)
 	am.total++
-	am.ledger = append(am.ledger, ledgerEntry{label: label, bound: bound})
+
+	id := AssociationID{Site: am.site, Seq: am.nextSeq}
+	am.nextSeq++
+	am.index[id] = len(am.ledger)
+	am.ledger = append(am.ledger, ledgerEntry{id: id, label: label, bound: bound})
 	am.rematerializeLocked()
-	return AssociationID(len(am.ledger))
+	return id
 }
 
 // RemoveAssociation exactly unlearns one stored association: its bound vector's set bits are
 // decremented from the tally, the active total drops by one, the entry is tombstoned, and the
 // majority vector is rematerialized. The result is bit-identical to a memory that had never
-// stored the entry. O(D), independent of corpus size — no retraining.
+// stored the entry. Tombstones are permanent and PROPAGATE through merges — forgetting wins.
 func (am *AssociativeMemory) RemoveAssociation(id AssociationID) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
@@ -138,23 +190,16 @@ func (am *AssociativeMemory) RemoveAssociation(id AssociationID) error {
 	if am.readOnly {
 		return fmt.Errorf("memory is read-only (OpenReadOnly)")
 	}
-	idx := int(id) - 1
-	if idx < 0 || idx >= len(am.ledger) {
-		return fmt.Errorf("unknown association id %d (ledger holds %d entries)", id, len(am.ledger))
+	idx, ok := am.index[id]
+	if !ok {
+		return fmt.Errorf("unknown association id %s (ledger holds %d entries)", id, len(am.ledger))
 	}
 	entry := &am.ledger[idx]
 	if entry.removed {
-		return fmt.Errorf("association %d is already removed", id)
+		return fmt.Errorf("association %s is already removed", id)
 	}
 
-	for i := 0; i < core.NumWords; i++ {
-		w := entry.bound.Vector[i]
-		base := i * 64
-		for w != 0 {
-			am.counts[base+bits.TrailingZeros64(w)]--
-			w &= w - 1
-		}
-	}
+	am.subBits(entry.bound)
 	am.total--
 	entry.removed = true
 	am.rematerializeLocked()
@@ -162,58 +207,80 @@ func (am *AssociativeMemory) RemoveAssociation(id AssociationID) error {
 }
 
 // Ledger returns the provenance records (id, label, removed) for every stored association,
-// including tombstoned ones.
+// including tombstoned ones, in canonical (site, seq) order.
 func (am *AssociativeMemory) Ledger() []AssociationRecord {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 
 	out := make([]AssociationRecord, len(am.ledger))
-	for i := range am.ledger {
-		out[i] = AssociationRecord{ID: AssociationID(i + 1), Label: am.ledger[i].label, Removed: am.ledger[i].removed}
+	for i, e := range am.canonicalLocked() {
+		out[i] = AssociationRecord{ID: e.id, Label: e.label, Removed: e.removed}
 	}
 	return out
 }
 
 // FindByLabel returns the ids of ACTIVE (non-removed) associations with an exactly matching
-// label.
+// label, in canonical order.
 func (am *AssociativeMemory) FindByLabel(label string) []AssociationID {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 
 	var ids []AssociationID
-	for i := range am.ledger {
-		if !am.ledger[i].removed && am.ledger[i].label == label {
-			ids = append(ids, AssociationID(i+1))
+	for _, e := range am.canonicalLocked() {
+		if !e.removed && e.label == label {
+			ids = append(ids, e.id)
 		}
 	}
 	return ids
 }
 
 // Contributors returns the active ledger entries whose bound vector lies within maxDist of
-// probe. With probe = context ⊗ HV(prediction) and maxDist 0, this names the exact stored
-// association that produced a prediction — the glass-box provenance behind cleanup results.
-// O(N·NumWords) over the ledger. Empty for OpenReadOnly memories (ledger not loaded).
+// probe, in canonical order. With probe = context ⊗ HV(prediction) and maxDist 0, this names
+// the exact stored association that produced a prediction. Empty for OpenReadOnly memories
+// (ledger not loaded).
 func (am *AssociativeMemory) Contributors(probe core.Hypervector, maxDist int) []Contributor {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 
 	var out []Contributor
-	for i := range am.ledger {
-		if am.ledger[i].removed {
+	for _, e := range am.canonicalLocked() {
+		if e.removed {
 			continue
 		}
-		if core.HammingDistance(am.ledger[i].bound, probe) <= maxDist {
-			out = append(out, Contributor{ID: AssociationID(i + 1), Label: am.ledger[i].label})
+		if core.HammingDistance(e.bound, probe) <= maxDist {
+			out = append(out, Contributor{ID: e.id, Label: e.label})
 		}
 	}
 	return out
 }
 
+// addBits / subBits fold one bound vector into / out of the tally. O(D).
+func (am *AssociativeMemory) addBits(bound core.Hypervector) {
+	for i := 0; i < core.NumWords; i++ {
+		w := bound.Vector[i]
+		base := i * 64
+		for w != 0 {
+			am.counts[base+bits.TrailingZeros64(w)]++
+			w &= w - 1
+		}
+	}
+}
+
+func (am *AssociativeMemory) subBits(bound core.Hypervector) {
+	for i := 0; i < core.NumWords; i++ {
+		w := bound.Vector[i]
+		base := i * 64
+		for w != 0 {
+			am.counts[base+bits.TrailingZeros64(w)]--
+			w &= w - 1
+		}
+	}
+}
+
 // rematerializeLocked recomputes the cached majority vector from the counters, so it is
 // bit-for-bit identical to core.Bundle over the ACTIVE bound pairs: a bit is set when
 // strictly more than half voted for it, and exact ties (even total, counts*2 == total) use
-// the same deterministic tie-break as Bundle. Resolving ties (rather than dropping them to
-// zero) keeps the memory vector near 50% density, which is required for clean unbinding.
+// the same deterministic tie-break as Bundle.
 func (am *AssociativeMemory) rematerializeLocked() {
 	var m core.Hypervector
 	for k := 0; k < core.Dimension; k++ {
@@ -224,6 +291,18 @@ func (am *AssociativeMemory) rematerializeLocked() {
 	}
 	m.Vector[core.NumWords-1] &= core.LastWordMask
 	am.matrix = m
+}
+
+// canonicalLocked returns the ledger entries sorted by (site, seq). Canonical order is what
+// serialization, fingerprints, and public views use, so replicas that merged in different
+// orders expose identical state. Caller must hold at least a read lock.
+func (am *AssociativeMemory) canonicalLocked() []*ledgerEntry {
+	out := make([]*ledgerEntry, len(am.ledger))
+	for i := range am.ledger {
+		out[i] = &am.ledger[i]
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].id.less(out[b].id) })
+	return out
 }
 
 // Matrix returns the current materialized majority (memory) vector.
@@ -248,19 +327,18 @@ func (am *AssociativeMemory) VocabSeed() uint64 {
 }
 
 // SetVocabSeed annotates the memory with the seed of the TokenDictionary it was built
-// against, persisted in the file header so a reloading process can verify vocabulary
-// compatibility.
+// against. Merging requires equal vocab seeds — vectors must mean the same thing.
 func (am *AssociativeMemory) SetVocabSeed(seed uint64) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 	am.vocabSeed = seed
 }
 
-// fileSizeLocked computes the exact v2 image size for the current state.
+// fileSizeLocked computes the exact v3 image size for the current state.
 func (am *AssociativeMemory) fileSizeLocked() int {
 	size := memFixedSize + 4
 	for i := range am.ledger {
-		size += 8 + 1 + 2 + len(am.ledger[i].label) + matrixBytes
+		size += 8 + 8 + 1 + 2 + len(am.ledger[i].label) + matrixBytes
 	}
 	return size
 }
@@ -273,8 +351,9 @@ func (am *AssociativeMemory) SaveToFile(filename string) error {
 	return writeMappedFile(filename, am.fileSizeLocked(), am.encodeInto)
 }
 
-// LoadFromFile maps the file and loads the full memory state (counters, total, vocab seed,
-// matrix, and ledger), leaving the instance ready for continued training and exact removal.
+// LoadFromFile maps the file and loads the full memory state, leaving the instance ready for
+// continued training, exact removal, and merging. The writer's sequence resumes after the
+// highest own-site entry so future IDs never collide with loaded history.
 func (am *AssociativeMemory) LoadFromFile(filename string) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
@@ -291,6 +370,7 @@ func (am *AssociativeMemory) LoadFromFile(filename string) error {
 
 	am.total = binary.LittleEndian.Uint64(data[16:])
 	am.vocabSeed = binary.LittleEndian.Uint64(data[24:])
+	am.site = binary.LittleEndian.Uint64(data[32:])
 	off := memHeader
 	for k := 0; k < core.Dimension; k++ {
 		am.counts[k] = binary.LittleEndian.Uint32(data[off+k*4:])
@@ -308,17 +388,19 @@ func (am *AssociativeMemory) LoadFromFile(filename string) error {
 	off += 4
 
 	ledger := make([]ledgerEntry, 0, count)
+	index := make(map[AssociationID]int, count)
+	maxOwnSeq := uint64(0)
 	for n := 0; n < count; n++ {
-		if len(data) < off+11 {
+		if len(data) < off+19 {
 			return fmt.Errorf("memory file truncated in ledger entry %d", n+1)
 		}
-		id := binary.LittleEndian.Uint64(data[off:])
-		if id != uint64(n+1) {
-			return fmt.Errorf("corrupt ledger: entry %d carries id %d", n+1, id)
+		id := AssociationID{
+			Site: binary.LittleEndian.Uint64(data[off:]),
+			Seq:  binary.LittleEndian.Uint64(data[off+8:]),
 		}
-		removed := data[off+8] != 0
-		labelLen := int(binary.LittleEndian.Uint16(data[off+9:]))
-		off += 11
+		removed := data[off+16] != 0
+		labelLen := int(binary.LittleEndian.Uint16(data[off+17:]))
+		off += 19
 		if len(data) < off+labelLen+matrixBytes {
 			return fmt.Errorf("memory file truncated in ledger entry %d", n+1)
 		}
@@ -329,17 +411,25 @@ func (am *AssociativeMemory) LoadFromFile(filename string) error {
 			bound.Vector[i] = binary.LittleEndian.Uint64(data[off+i*8:])
 		}
 		off += matrixBytes
-		ledger = append(ledger, ledgerEntry{label: label, removed: removed, bound: bound})
+		if _, dup := index[id]; dup {
+			return fmt.Errorf("corrupt ledger: duplicate id %s", id)
+		}
+		index[id] = len(ledger)
+		ledger = append(ledger, ledgerEntry{id: id, label: label, removed: removed, bound: bound})
+		if id.Site == am.site && id.Seq > maxOwnSeq {
+			maxOwnSeq = id.Seq
+		}
 	}
 	am.ledger = ledger
+	am.index = index
+	am.nextSeq = maxOwnSeq + 1
 	am.readOnly = false
 	return nil
 }
 
-// OpenReadOnly maps the file and loads only the vocab seed and materialized matrix (skipping
-// the tally and ledger), yielding a query-only memory for inference — the zero-heap streaming
-// read path. StoreLabeled panics and RemoveAssociation errors on the result; Contributors
-// returns nothing (the ledger is not loaded).
+// OpenReadOnly maps the file and loads only the metadata and materialized matrix (skipping
+// the tally and ledger), yielding a query-only memory for inference. StoreLabeled panics,
+// RemoveAssociation and Merge error, and Contributors returns nothing on the result.
 func OpenReadOnly(filename string) (*AssociativeMemory, error) {
 	data, closer, err := openMappedFile(filename)
 	if err != nil {
@@ -351,9 +441,10 @@ func OpenReadOnly(filename string) (*AssociativeMemory, error) {
 		return nil, err
 	}
 
-	am := &AssociativeMemory{readOnly: true}
+	am := &AssociativeMemory{readOnly: true, index: make(map[AssociationID]int)}
 	am.total = binary.LittleEndian.Uint64(data[16:])
 	am.vocabSeed = binary.LittleEndian.Uint64(data[24:])
+	am.site = binary.LittleEndian.Uint64(data[32:])
 	off := memHeader + countsBytes
 	for i := 0; i < core.NumWords; i++ {
 		am.matrix.Vector[i] = binary.LittleEndian.Uint64(data[off+i*8:])
@@ -361,7 +452,8 @@ func OpenReadOnly(filename string) (*AssociativeMemory, error) {
 	return am, nil
 }
 
-// encodeInto writes the full v2 file image into buf (len(buf) must equal fileSizeLocked()).
+// encodeInto writes the full v3 file image into buf (len(buf) must equal fileSizeLocked()).
+// Entries are written in canonical order so identical states produce identical bytes.
 // Caller must hold at least a read lock.
 func (am *AssociativeMemory) encodeInto(buf []byte) {
 	copy(buf[0:4], memMagic)
@@ -370,6 +462,7 @@ func (am *AssociativeMemory) encodeInto(buf []byte) {
 	binary.LittleEndian.PutUint32(buf[12:], uint32(core.NumWords))
 	binary.LittleEndian.PutUint64(buf[16:], am.total)
 	binary.LittleEndian.PutUint64(buf[24:], am.vocabSeed)
+	binary.LittleEndian.PutUint64(buf[32:], am.site)
 
 	off := memHeader
 	for k := 0; k < core.Dimension; k++ {
@@ -383,16 +476,16 @@ func (am *AssociativeMemory) encodeInto(buf []byte) {
 
 	binary.LittleEndian.PutUint32(buf[off:], uint32(len(am.ledger)))
 	off += 4
-	for n := range am.ledger {
-		e := &am.ledger[n]
-		binary.LittleEndian.PutUint64(buf[off:], uint64(n+1))
+	for _, e := range am.canonicalLocked() {
+		binary.LittleEndian.PutUint64(buf[off:], e.id.Site)
+		binary.LittleEndian.PutUint64(buf[off+8:], e.id.Seq)
 		if e.removed {
-			buf[off+8] = 1
+			buf[off+16] = 1
 		} else {
-			buf[off+8] = 0
+			buf[off+16] = 0
 		}
-		binary.LittleEndian.PutUint16(buf[off+9:], uint16(len(e.label)))
-		off += 11
+		binary.LittleEndian.PutUint16(buf[off+17:], uint16(len(e.label)))
+		off += 19
 		copy(buf[off:], e.label)
 		off += len(e.label)
 		for i := 0; i < core.NumWords; i++ {
@@ -411,7 +504,7 @@ func validateHeader(buf []byte) error {
 		return fmt.Errorf("bad magic %q (not a NeuroVSA memory file)", buf[0:4])
 	}
 	if v := binary.LittleEndian.Uint16(buf[4:]); v != memVersion {
-		return fmt.Errorf("unsupported memory file version %d (this build reads v%d; v1 files predate the provenance ledger — re-train and re-save)", v, memVersion)
+		return fmt.Errorf("unsupported memory file version %d (this build reads v%d; v1/v2 files predate site-scoped identity — re-train and re-save)", v, memVersion)
 	}
 	if d := binary.LittleEndian.Uint32(buf[8:]); d != uint32(core.Dimension) {
 		return fmt.Errorf("dimension mismatch: file has %d, build has %d", d, core.Dimension)

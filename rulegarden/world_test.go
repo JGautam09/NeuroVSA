@@ -5,7 +5,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/JGautam09/NeuroVSA/engine"
 )
+
+// lid builds a local-site lesson id pointer for event literals.
+func lid(seq uint64) *engine.AssociationID {
+	return &engine.AssociationID{Seq: seq}
+}
 
 // buildDemoWorld scripts a small deterministic scenario used across tests: one creature, one
 // predator, one food, two taught lessons, a transfer, and a forget, over 50 ticks.
@@ -32,12 +39,12 @@ func buildDemoWorld(t *testing.T) *World {
 	for w.Tick < 10 {
 		w.Step()
 	}
-	mustApply(Event{Op: "transfer", Creature: 1, Lesson: 1, NewSees: "guard"})
+	mustApply(Event{Op: "transfer", Creature: 1, Lesson: lid(1), NewSees: "guard"})
 
 	for w.Tick < 15 {
 		w.Step()
 	}
-	mustApply(Event{Op: "forget", Creature: 1, Lesson: 2})
+	mustApply(Event{Op: "forget", Creature: 1, Lesson: lid(2)})
 
 	for w.Tick < 50 {
 		w.Step()
@@ -158,7 +165,7 @@ func TestForgetRestoresInstinct(t *testing.T) {
 	if d := c.Brain.Decide(p); d.Action != ActMoveAway || d.Basis != "lesson" {
 		t.Fatalf("after teach: %+v", d)
 	}
-	if err := w.Apply(Event{Op: "forget", Creature: 1, Lesson: 1}); err != nil {
+	if err := w.Apply(Event{Op: "forget", Creature: 1, Lesson: lid(1)}); err != nil {
 		t.Fatal(err)
 	}
 	if d := c.Brain.Decide(p); d.Action != ActWander || d.Basis != "instinct" {
@@ -189,7 +196,7 @@ func TestTransferAnalogy(t *testing.T) {
 	if len(d.Contributors) != 1 || d.Contributors[0].ID != derived {
 		t.Fatalf("guard decision should name the derived lesson %d, got %+v", derived, d.Contributors)
 	}
-	if !strings.Contains(d.Contributors[0].Label, "from lesson 1") {
+	if !strings.Contains(d.Contributors[0].Label, "from lesson 0:1") {
 		t.Fatalf("derived lesson label lacks lineage: %q", d.Contributors[0].Label)
 	}
 
