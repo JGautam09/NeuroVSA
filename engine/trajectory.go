@@ -80,12 +80,14 @@ func (r *ToolRouter) goalVector(goal string) core.Hypervector {
 
 // RegisterWorkflow teaches the router a successful tool sequence for a goal by storing a
 // (state -> next-action) association at every step, advancing the state exactly the way an
-// agent does at runtime: state' = ρ(state) ⊗ V_action.
+// agent does at runtime: state' = ρ(state) ⊗ V_action. Each association is labeled
+// "<goal>/step<k>→<action>" so traces and the ledger can name the workflow step behind a
+// routing decision.
 func (r *ToolRouter) RegisterWorkflow(goal string, actions []string) {
 	state := r.goalVector(goal)
-	for _, act := range actions {
+	for i, act := range actions {
 		actHV := r.toolDict.GetOrRegister(act)
-		r.policy.StoreAssociation(state, actHV)
+		r.policy.StoreLabeled(state, actHV, fmt.Sprintf("%s/step%d→%s", goal, i+1, act))
 		state = state.Permute(1).Bind(actHV)
 	}
 }

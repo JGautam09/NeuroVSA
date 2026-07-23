@@ -99,12 +99,16 @@ func NewServer(port int) *Server {
 		dict.GetOrRegister(tok)
 	}
 
-	// Train default sequence: "func" -> "main" -> "fmt.Println" -> "return" -> "nil"
+	// Train default sequence: "func" -> "main" -> "fmt.Println" -> "return" -> "nil",
+	// labeling each association so traces can name the demo step that produced a prediction.
+	mem.SetVocabSeed(dict.Seed())
+	ctxLabel := "func"
 	prevHV := dict.GetOrRegister("func")
 	for _, tok := range []string{"main", "fmt.Println", "return", "nil"} {
 		nextHV := dict.GetOrRegister(tok)
-		mem.StoreAssociation(prevHV, nextHV)
+		mem.StoreLabeled(prevHV, nextHV, fmt.Sprintf("demo[%s]→%s", ctxLabel, tok))
 		prevHV = prevHV.Permute(1).Bind(nextHV)
+		ctxLabel += " " + tok
 	}
 
 	return &Server{
