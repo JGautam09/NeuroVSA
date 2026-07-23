@@ -21,9 +21,10 @@ identified by external review. Each closes a gap between a documented claim and 
   O(D) counter decrement — bit-identical to never having stored it, no retraining (~11 µs,
   zero-alloc). `Ledger`, `FindByLabel`, and `Contributors` expose provenance.
 - **First-class glass-box traces**: `PredictionTrace`/`GenerationTrace` carry the symbolic
-  derivation, the full ranked candidate table (`core.LookupCandidates`), explicit stop
-  reasons, and the exact ledger association behind each prediction and routing decision.
-  Exposed over the WebSocket API (`"trace": true`) and in the terminal UI (`/trace` toggle).
+  derivation, a ranked candidate table (`core.LookupCandidates`; the WebSocket returns up to
+  five prompt candidates), explicit stop reasons, and any exact-match ledger
+  association(s) for the chosen result. Exposed over the WebSocket API (`"trace": true`) and
+  in the terminal UI (`/trace` toggle).
 
 ### Changed
 - **Breaking:** `NewTokenDictionary()` is now deterministic (seeded with `DefaultSeed`);
@@ -42,7 +43,7 @@ First public release.
   permute, majority-vote bundle, `POPCNT` Hamming distance, and a thread-safe item-memory
   dictionary.
 - Counter-vector associative memory — O(D) per write, independent of corpus size — with
-  genuine `mmap` persistence and a zero-heap read-only open path.
+  `mmap` persistence and a read-only open path that skips the tally and ledger.
 - Go AST → hypervector structural encoder.
 - Agent trajectory router: a learned (state → next-action) policy with goal- and
   history-dependent tool selection (~1 µs).

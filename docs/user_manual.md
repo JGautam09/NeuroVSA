@@ -81,8 +81,8 @@ its learned tool sequence.
 
 ### 3. Glass-Box Tracing
 Type `/trace` to toggle tracing. While on, every prediction and routing result is followed by
-its derivation: the runner-up candidates with exact Hamming distances, and the label of the
-stored association that produced the result (from the provenance ledger).
+its derivation: ranked runner-up candidates with exact Hamming distances, and—when an exact
+ledger match exists—the matching stored association label(s).
 ```text
 /trace
 func
@@ -120,8 +120,8 @@ Endpoint: `ws://localhost:8080/ws`
 }
 ```
 `trace` (optional, also valid on `route_tool`) requests a glass-box derivation with each
-result: the ranked candidate table, symbolic context ops, stop reason, and the ledger
-association behind the prediction.
+result: the ranked candidate table (up to five prompt candidates over the WebSocket), symbolic
+context ops, stop reason, and any exact-match ledger association(s) for the chosen result.
 
 #### 2. Agent Tool Routing Request
 ```json

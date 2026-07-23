@@ -37,8 +37,8 @@ To keep the claims honest, the repo ships [**the arena**](arena/) — a head-to-
 - **Zero external ML dependencies.** Pure-Go bitwise core; the only third-party import is `gorilla/websocket` for the optional API.
 - **Deterministic by default.** Token vectors derive from a seeded hash stream (`core.SeededHV`), so encodings are bit-identical across runs and machines — proven by committed golden vectors that CI verifies on both ubuntu and macos.
 - **Tiny & fast.** 1,256 bytes per vector; ~76 ns bind, ~43 ns Hamming, ~286 ns permute (word-level rotate), all zero-allocation.
-- **Instant learning — and exact unlearning.** Associative-memory writes are O(D) counter updates, independent of corpus size; `RemoveAssociation` exactly unlearns one stored association (an O(D) counter decrement — no retraining), leaving the memory bit-identical to never having stored it. Genuine `mmap` persistence with a zero-heap read-only open path.
-- **Glass-box tracing.** Every prediction and routing decision can return its full derivation as data: the symbolic ops applied, the ranked candidate table with exact Hamming distances, and — via the provenance ledger — the precise stored association that produced the result.
+- **Instant learning — and exact unlearning.** Associative-memory writes are O(D) counter updates, independent of corpus size; `RemoveAssociation` exactly unlearns one stored association (an O(D) counter decrement — no retraining), leaving the memory bit-identical to never having stored it. Persistence uses `mmap`; `OpenReadOnly` loads only the vocab seed and materialized matrix into a small query-only object, skipping the tally and ledger.
+- **Glass-box tracing.** Every prediction and routing decision can return its derivation as data: the symbolic ops applied, a ranked candidate table with exact Hamming distances (the WebSocket returns up to five prompt candidates), and — when an exact ledger match exists — the matching stored association(s).
 
 ---
 
@@ -86,7 +86,7 @@ Server flags: `-port` (default 8080), `-index-root` (directory the `/ast` indexe
 cd ui && npm install && npm run dev   # open http://localhost:3000
 ```
 
-Commands in the web terminal: a plain prompt like `func main` (autoregressive token generation), `/route fix_bug` (agent tool routing), `/ast .` (index Go files under the index root), and `/trace` (toggle glass-box mode — every result then shows its runners-up and the exact stored memory that produced it).
+Commands in the web terminal: a plain prompt like `func main` (autoregressive token generation), `/route fix_bug` (agent tool routing), `/ast .` (index Go files under the index root), and `/trace` (toggle glass-box mode — every result then shows its runners-up and any exact-match stored association).
 
 **Run the arena benchmark:**
 
