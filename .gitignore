@@ -25,6 +25,22 @@ ui/.vite/
 *.out
 *.test
 *.prof
+coverage.*
 
-# AntiGravity / IDE scratch
+# Python (arena neural baseline)
+__pycache__/
+*.pyc
+.venv/
+venv/
+*venv*/
+.python-version
+
+# Editors / IDEs
 .gemini/
+.vscode/
+.idea/
+*.swp
+*~
+
+# Logs
+*.log
