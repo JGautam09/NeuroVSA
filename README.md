@@ -32,6 +32,31 @@ To keep the claims honest, the repo ships [**the arena**](arena/) — a head-to-
 
 ---
 
+## The flagship trio — RuleGarden, NeuroMesh & ProofRoute
+
+Those genuine strengths aren't abstract — they ship as three composed capabilities, built as
+**one product line, not three demos**. Every claim below is backed by a test, not a promise:
+
+| Capability | What it is | Why it's real |
+| :-- | :-- | :-- |
+| **RuleGarden** | A deterministic, teachable artificial-life world with glass-box VSA brains, running **entirely in a browser tab** (Go → WASM — no model file, no server). Teach a creature by example, transfer a lesson by analogy, forget it *exactly*. | A world **is** its `seed + event log`; the same pack replays to a **bit-identical world hash**, golden-tested in CI on Linux *and* macOS. |
+| **NeuroMesh** | The associative memory is a **CRDT**: merge two players' worlds and your creature absorbs every lesson, each keeping its **foreign site id** in the ledger — and forgetting propagates through the merge. | Commutativity, associativity, idempotence, and convergence under gossip interleavings are **property-tested** to bit-exact fingerprints. |
+| **ProofRoute** | Every decision can emit a **re-executable certificate** (state, ranked candidates, contributing lessons, memory fingerprint; optional ed25519 signature). Signed **lesson packs** carry a policy as a portable mini-replica. | Anyone holding the brain re-executes a receipt to **bit-for-bit agreement**; the `nvsa-verify` CLI re-runs a browser-issued receipt natively, and any tampering breaks *both* the signature and the re-execution. |
+
+RuleGarden is the flagship you can touch; **NeuroMesh** and **ProofRoute** are engine
+capabilities that power its headline verbs — *merge worlds*, *decision receipts* — and stand
+alone as library value. Every choice is labeled **lesson / generalization / instinct** (recall,
+analogy, or an honest shrug), with the causing lesson named.
+
+```bash
+sh web/rulegarden/build.sh && python3 -m http.server 8090 -d web/rulegarden
+# open http://localhost:8090 — teach a creature, forget the lesson, watch the numbers not lie
+```
+
+Full guide and measured limits (finite brain capacity, merge caveats): [`rulegarden/README.md`](rulegarden/README.md).
+
+---
+
 ## Highlights
 
 - **Zero external ML dependencies.** Pure-Go bitwise core; the only third-party import is `gorilla/websocket` for the optional API.
@@ -96,30 +121,6 @@ python3 -m pip install model2vec               # neural side (or: sentence-trans
 python3 arena/neural_baseline.py
 go test ./arena/ -run TestArenaReport -v       # merge → arena/ARENA_RESULTS.md
 ```
-
----
-
-## RuleGarden — the flagship demo
-
-A deterministic artificial-life world whose creatures carry glass-box VSA brains, running
-entirely in a browser tab (Go → WASM, no model file, no server calls). It turns the engine's
-guarantees into game verbs:
-
-- **Teach** one-shot lessons; **transfer** them by analogy; **forget** them *exactly* — the
-  action table returns bit-identical to before the lesson existed.
-- **Merge brains across worlds** (a CRDT merge with proven convergence): your creature
-  absorbs a friend's lessons, each keeping its foreign site id in the ledger.
-- **Download a decision receipt** and re-execute it anywhere:
-  `nvsa-verify -cert receipt.json -memory brain.bin` confirms the decision bit-for-bit.
-- Every decision is labeled **lesson / generalization / instinct**, with the causing
-  association named.
-
-```bash
-sh web/rulegarden/build.sh && python3 -m http.server 8090 -d web/rulegarden
-# open http://localhost:8090
-```
-
-Guide and honest limits (measured brain capacity, merge caveats): [`rulegarden/README.md`](rulegarden/README.md).
 
 ---
 
