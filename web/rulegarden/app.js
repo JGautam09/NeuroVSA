@@ -104,6 +104,7 @@ function renderInspector() {
     btn.onclick = () => {
       refresh(call('apply', JSON.stringify({ op: 'forget', creature: selected, lesson: btn.dataset.forget })));
       log(`forgot lesson ${btn.dataset.forget} — memory is now bit-identical to never having learned it`);
+      syncBroadcastRevoke(btn.dataset.forget); // live peers tombstone it too
     };
   }
 
@@ -154,6 +155,7 @@ $('teach').onclick = () => {
   const percept = { sees: $('tSees').value, dist: $('tDist').value, dir: $('tDir').value };
   refresh(call('apply', JSON.stringify({ op: 'teach', creature: selected, percept, action: $('tAct').value })));
   log(`taught #${selected}: see ${percept.sees} (${percept.dist}, ${percept.dir}) → ${$('tAct').value} — one-shot, no training loop`);
+  syncBroadcastBrain(); // live peers learn it too
 };
 
 $('teachCurrent').onclick = () => {
@@ -165,6 +167,7 @@ $('teachCurrent').onclick = () => {
   const p = cr.decision.percept;
   refresh(call('apply', JSON.stringify({ op: 'teach', creature: selected, percept: p, action: $('tAct').value })));
   log(`taught #${selected} from its own situation: ${p.sees} (${p.dist}, ${p.dir}) → ${$('tAct').value}`);
+  syncBroadcastBrain(); // live peers learn it too
 };
 
 $('transfer').onclick = () => {
@@ -172,6 +175,7 @@ $('transfer').onclick = () => {
   const lesson = $('xLesson').value;
   refresh(call('apply', JSON.stringify({ op: 'transfer', creature: selected, lesson, new_sees: $('xSees').value })));
   log(`transferred lesson ${lesson} by analogy → subject ${$('xSees').value} (the dollar-of-Mexico move)`);
+  syncBroadcastBrain(); // live peers learn it too
 };
 
 $('export').onclick = () => {
@@ -277,11 +281,38 @@ async function applyRegistryPack(manifestUrl, entry, mode) {
       if (!data) return;
       refresh(data.state);
       log(`merged "${entry.name}" into creature #${selected} — ` + describeSig(data.pack_signature));
+      syncBroadcastBrain();
     }
   } catch (e) {
     log('✗ registry pack: ' + e.message);
   }
 }
+
+// ---- live sync (P2P) ----
+$('syncHost').onclick = async () => {
+  if (!selected) { log('select a creature first — it is the one that will sync'); return; }
+  try {
+    $('syncBlob').value = await syncHost(selected);
+    $('syncStatus').textContent = 'hosting — send the blob to your peer, paste their answer, press Accept answer';
+    log('hosting a live-sync offer (copy the blob to your peer)');
+  } catch (e) { log('✗ sync host: ' + e.message); }
+};
+$('syncJoin').onclick = async () => {
+  if (!selected) { log('select a creature first — it is the one that will sync'); return; }
+  if (!$('syncBlob').value.trim()) { log('paste the host\'s offer blob first'); return; }
+  try {
+    $('syncBlob').value = await syncJoin($('syncBlob').value, selected);
+    $('syncStatus').textContent = 'joined — send this answer blob back to the host';
+    log('answer created (copy the blob back to the host)');
+  } catch (e) { log('✗ sync join: ' + e.message); }
+};
+$('syncAnswer').onclick = async () => {
+  if (!$('syncBlob').value.trim()) { log('paste the joiner\'s answer blob first'); return; }
+  try {
+    await syncAcceptAnswer($('syncBlob').value);
+    $('syncStatus').textContent = 'connecting…';
+  } catch (e) { log('✗ sync accept: ' + e.message); }
+};
 
 // ---- identity (signing key) ----
 function describeSig(sig) {
@@ -335,6 +366,12 @@ function download(name, content, mime) {
     $(id).innerHTML = KINDS.map((k) => `<option>${k}</option>`).join('');
   }
   refresh(call('newWorld', $('seed').value));
+
+  // Live-sync wiring: the transport calls back into the same engine bridge + render path.
+  liveSync.callEngine = call;
+  liveSync.onApply = (data) => refresh(data);
+  liveSync.onLog = log;
+  liveSync.onState = (s) => { $('syncStatus').textContent = s; };
 
   // Identity boot: receipts and exported worlds are signed from here on. Unavailable key
   // storage (e.g. private browsing) degrades honestly to the old unsigned behavior.

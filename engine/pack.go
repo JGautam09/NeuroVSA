@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/JGautam09/NeuroVSA/core"
 )
@@ -20,12 +21,12 @@ import (
 // double-counting), applying a pack twice is idempotent, and RevokePack's tombstones
 // propagate to everyone downstream — revocation travels with the data.
 type Pack struct {
-	Name      string      `json:"name"`
-	VocabSeed uint64      `json:"vocab_seed"`
-	Site      uint64      `json:"site"` // the pack's writer identity; authors must claim distinct sites
-	Entries   []PackEntry `json:"entries"`
-	PublicKey []byte      `json:"public_key,omitempty"`
-	Signature []byte      `json:"signature,omitempty"`
+	Name      string      `json:"-"` // JSON via custom marshalers below
+	VocabSeed uint64      `json:"-"`
+	Site      uint64      `json:"-"` // the pack's writer identity; authors must claim distinct sites
+	Entries   []PackEntry `json:"-"`
+	PublicKey []byte      `json:"-"`
+	Signature []byte      `json:"-"`
 }
 
 // PackEntry is one association: its sequence under the pack's site, its human-readable
@@ -50,6 +51,38 @@ func PackFromMemory(name string, mem *AssociativeMemory) Pack {
 		p.Entries = append(p.Entries, PackEntry{Seq: e.id.Seq, Label: e.label, Bound: e.bound})
 	}
 	return p
+}
+
+// PacksFromMemory captures a memory's ACTIVE associations as one single-site pack per
+// writer site, in the memory's canonical entry order. This is the lossless snapshot form
+// for multi-site memories: a Pack is a single-site mini-replica by design, so a brain that
+// has merged lessons from several authors must ship one pack per author — each lesson keeps
+// its original (site, seq) identity, which is what makes re-applying idempotent and
+// cross-replica deduplication exact. (PackFromMemory remains the single-author flow; it
+// exports under the memory's OWN site and is only lossless for single-site memories.)
+func PacksFromMemory(name string, mem *AssociativeMemory) []Pack {
+	mem.mu.RLock()
+	defer mem.mu.RUnlock()
+
+	bySite := make(map[uint64]*Pack)
+	var order []uint64 // first-appearance order of sites in canonical entry order
+	for _, e := range mem.canonicalLocked() {
+		if e.removed {
+			continue
+		}
+		p := bySite[e.id.Site]
+		if p == nil {
+			p = &Pack{Name: name, VocabSeed: mem.vocabSeed, Site: e.id.Site}
+			bySite[e.id.Site] = p
+			order = append(order, e.id.Site)
+		}
+		p.Entries = append(p.Entries, PackEntry{Seq: e.id.Seq, Label: e.label, Bound: e.bound})
+	}
+	packs := make([]Pack, 0, len(order))
+	for _, s := range order {
+		packs = append(packs, *bySite[s])
+	}
+	return packs
 }
 
 // Memory materializes the pack as its mini-replica: a memory at the pack's site containing
@@ -149,7 +182,58 @@ func (p *Pack) CanonicalBytes() []byte {
 	return b.Bytes()
 }
 
-// ---- JSON (bound vectors as hex) ----
+// ---- JSON (bound vectors as hex; 64-bit ids as strings) ----
+
+// wireU64 marshals a uint64 as a QUOTED decimal string. Site ids use the full uint64
+// range, and JavaScript JSON round-trips numbers above 2^53 with silent precision loss —
+// which would corrupt the pack in transit and (correctly but confusingly) invalidate its
+// signature. Quoted strings survive every JSON implementation intact. Unmarshal tolerates
+// bare numbers too, for packs written by pre-string versions.
+type wireU64 uint64
+
+func (v wireU64) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + strconv.FormatUint(uint64(v), 10) + `"`), nil
+}
+
+func (v *wireU64) UnmarshalJSON(b []byte) error {
+	s := string(bytes.Trim(b, `"`))
+	u, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	*v = wireU64(u)
+	return nil
+}
+
+type packWireJSON struct {
+	Name      string      `json:"name"`
+	VocabSeed wireU64     `json:"vocab_seed"`
+	Site      wireU64     `json:"site"`
+	Entries   []PackEntry `json:"entries"`
+	PublicKey []byte      `json:"public_key,omitempty"`
+	Signature []byte      `json:"signature,omitempty"`
+}
+
+func (p Pack) MarshalJSON() ([]byte, error) {
+	return json.Marshal(packWireJSON{
+		Name:      p.Name,
+		VocabSeed: wireU64(p.VocabSeed),
+		Site:      wireU64(p.Site),
+		Entries:   p.Entries,
+		PublicKey: p.PublicKey,
+		Signature: p.Signature,
+	})
+}
+
+func (p *Pack) UnmarshalJSON(data []byte) error {
+	var w packWireJSON
+	if err := json.Unmarshal(data, &w); err != nil {
+		return err
+	}
+	p.Name, p.VocabSeed, p.Site = w.Name, uint64(w.VocabSeed), uint64(w.Site)
+	p.Entries, p.PublicKey, p.Signature = w.Entries, w.PublicKey, w.Signature
+	return nil
+}
 
 type packEntryJSON struct {
 	Seq      uint64 `json:"seq"`

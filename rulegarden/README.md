@@ -53,6 +53,29 @@ To browse the *local* registry copy while developing, serve the repo root instea
 `python3 -m http.server 8090` → open `http://localhost:8090/web/rulegarden/` and load
 `/registry/index.json`.
 
+## Live sync (P2P, no server)
+
+Two players can connect their worlds over a **WebRTC data channel** — world data never
+touches a server. Signaling is manual copy/paste of an offer/answer blob (the same trust
+gesture as pasting a world pack; no signaling infrastructure), with public STUN for NAT
+traversal. Once connected, the selected creatures sync **creature-to-creature**: teaches and
+transfers flow as flat, signed lesson packs; **forgets propagate as revocations** — all
+applied through logged `apply_pack`/`revoke_pack` world events, so a live-synced world still
+replays bit-exactly. Convergence is the NeuroMesh CRDT doing its job: re-sent packs are
+no-op merges, order between mutations doesn't matter, and every lesson keeps its **author's
+site id** even when relayed.
+
+Honest limits, stated plainly:
+
+- **No TURN relay.** STUN-only WebRTC fails on some symmetric-NAT networks; if the channel
+  won't open, fall back to pack exchange.
+- **Peers need different world seeds** (same-seed worlds are "the same writers"; the engine
+  refuses the collision atomically).
+- **Forgets propagate only while connected.** The connect snapshot carries *active* lessons,
+  so a forget done while apart is not replayed on reconnect — for full historical
+  reconciliation including offline forgets, use **Merge brains** (world-pack paste): its
+  ledger union ORs tombstones.
+
 ## Determinism contract
 
 A world **is** its `seed + event log` — a few hundred bytes of JSON. Same pack ⇒ bit-identical

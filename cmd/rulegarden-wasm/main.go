@@ -280,6 +280,97 @@ func main() {
 			}
 			return reply(data, nil)
 		}),
+		// ---- live sync (Phase C): flat lesson packs over a peer channel ----
+		// brainPacks(creatureID) — the creature's active lessons as one pack per author
+		// site (lossless for merged brains), each signed when an identity is active. This is
+		// both the on-connect snapshot and the after-mutation broadcast.
+		"brainPacks": js.FuncOf(func(this js.Value, args []js.Value) any {
+			id, err := strconv.Atoi(args[0].String())
+			if err != nil {
+				return reply(nil, err)
+			}
+			packs, err := world.BrainPacks("live-sync", id)
+			if err != nil {
+				return reply(nil, err)
+			}
+			if identity != nil {
+				for i := range packs {
+					packs[i].Sign(identity)
+				}
+			}
+			return reply(map[string]any{"packs": packs}, nil)
+		}),
+		// revocationPack(creatureID, lessonID) — the pack a peer needs to tombstone one
+		// forgotten lesson (zero bound vector: revocation is by identity, not content).
+		"revocationPack": js.FuncOf(func(this js.Value, args []js.Value) any {
+			id, err := strconv.Atoi(args[0].String())
+			if err != nil {
+				return reply(nil, err)
+			}
+			var lesson engine.AssociationID
+			if err := lesson.UnmarshalText([]byte(args[1].String())); err != nil {
+				return reply(nil, fmt.Errorf("invalid lesson id: %w", err))
+			}
+			p, err := world.RevocationPack("live-revoke", id, lesson)
+			if err != nil {
+				return reply(nil, err)
+			}
+			if identity != nil {
+				p.Sign(identity)
+			}
+			return reply(map[string]any{"pack": p}, nil)
+		}),
+		// inspectLessonPack(packJSON) — signature state + shape, WITHOUT applying. The
+		// sync trust gate calls this before deciding.
+		"inspectLessonPack": js.FuncOf(func(this js.Value, args []js.Value) any {
+			var p engine.Pack
+			if err := json.Unmarshal([]byte(args[0].String()), &p); err != nil {
+				return reply(nil, fmt.Errorf("invalid lesson pack: %w", err))
+			}
+			info := map[string]any{
+				"signed":  len(p.Signature) > 0,
+				"entries": len(p.Entries),
+				"site":    strconv.FormatUint(p.Site, 10),
+			}
+			if len(p.Signature) > 0 {
+				info["valid"] = p.VerifySignature()
+				info["fingerprint"] = engine.KeyFingerprint(p.PublicKey)
+				info["public_key_b64"] = base64.StdEncoding.EncodeToString(p.PublicKey)
+			}
+			return reply(info, nil)
+		}),
+		// applyRemotePack(packJSON, creatureID) — the receive half of live sync: a logged,
+		// replayable apply_pack event (idempotent merge; invalid signatures refused).
+		"applyRemotePack": js.FuncOf(func(this js.Value, args []js.Value) any {
+			var p engine.Pack
+			if err := json.Unmarshal([]byte(args[0].String()), &p); err != nil {
+				return reply(nil, fmt.Errorf("invalid lesson pack: %w", err))
+			}
+			id, err := strconv.Atoi(args[1].String())
+			if err != nil {
+				return reply(nil, err)
+			}
+			if err := world.ApplyLessonPackTo(p, id); err != nil {
+				return reply(nil, err)
+			}
+			return reply(state(), nil)
+		}),
+		// applyRemoteRevoke(packJSON, creatureID) — a peer's forget, as a logged
+		// revoke_pack event (tombstones propagate; idempotent).
+		"applyRemoteRevoke": js.FuncOf(func(this js.Value, args []js.Value) any {
+			var p engine.Pack
+			if err := json.Unmarshal([]byte(args[0].String()), &p); err != nil {
+				return reply(nil, fmt.Errorf("invalid lesson pack: %w", err))
+			}
+			id, err := strconv.Atoi(args[1].String())
+			if err != nil {
+				return reply(nil, err)
+			}
+			if err := world.RevokeLessonPackFrom(p, id); err != nil {
+				return reply(nil, err)
+			}
+			return reply(state(), nil)
+		}),
 		// version() — engine capacity constant for UI limits.
 		"version": js.FuncOf(func(this js.Value, args []js.Value) any {
 			return reply(map[string]any{
