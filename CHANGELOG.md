@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] — 2026-07-24 "Worlds in Contact"
 
 ### Added
 - **Live world sync (trust arc, Phase C)** — two players connect their worlds over a
@@ -196,6 +196,7 @@ First public release.
   the arena) instead of unbacked "breakthrough" claims.
 - Module path is now `github.com/JGautam09/NeuroVSA` (go-get-able).
 
+[0.6.0]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.6.0
 [0.5.0]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.5.0
 [0.4.0]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.4.0
 [0.3.0]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.3.0
