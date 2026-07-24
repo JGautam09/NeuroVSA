@@ -5,7 +5,7 @@
 [![CI](https://github.com/JGautam09/NeuroVSA/actions/workflows/ci.yml/badge.svg)](https://github.com/JGautam09/NeuroVSA/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8?style=flat&logo=go)](https://golang.org)
 [![Go Report Card](https://goreportcard.com/badge/github.com/JGautam09/NeuroVSA)](https://goreportcard.com/report/github.com/JGautam09/NeuroVSA)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 NeuroVSA implements the core VSA algebra — **bind** (XOR), **bundle** (majority vote), **permute** (cyclic rotate), and **Hamming-distance cleanup** — over 10,000-bit binary hypervectors packed into `[157]uint64`. On top of the math core it adds an associative memory with memory-mapped persistence, a Go-AST structural encoder, an agent trajectory router, and a WebSocket API with a retro React terminal UI. Every operation is integer, bitwise, and fully local.
 
@@ -162,4 +162,4 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md). Issue
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+Apache License 2.0 — see [`LICENSE`](LICENSE). Copyright 2026 Jitendra Gautam.

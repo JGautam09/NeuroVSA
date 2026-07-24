@@ -11,7 +11,7 @@ Briefly describe the change and the motivation.
 - [ ] New core primitives include an equivalence test vs. a naive reference
 - [ ] Core packages remain dependency-free (only `gorilla/websocket` allowed, in `api/`)
 - [ ] Docs/benchmarks updated if behavior or numbers changed
-- [ ] I agree that this contribution may be distributed under the repository's MIT License.
+- [ ] I agree that this contribution is licensed under the repository's Apache License 2.0.
 
 ## Notes
 
