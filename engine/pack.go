@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/JGautam09/NeuroVSA/core"
 )
@@ -96,6 +95,9 @@ func (p *Pack) Memory() (*AssociativeMemory, error) {
 		if len(e.Label) > maxLabelLen {
 			return nil, fmt.Errorf("pack %q entry seq %d has a %d-byte label exceeding the %d-byte limit", p.Name, e.Seq, len(e.Label), maxLabelLen)
 		}
+		if err := e.Bound.ValidateCanonical(); err != nil {
+			return nil, fmt.Errorf("pack %q entry seq %d: %w", p.Name, e.Seq, err)
+		}
 		id := AssociationID{Site: p.Site, Seq: e.Seq}
 		if _, dup := m.index[id]; dup {
 			return nil, fmt.Errorf("pack %q has duplicate entry seq %d", p.Name, e.Seq)
@@ -184,41 +186,23 @@ func (p *Pack) CanonicalBytes() []byte {
 
 // ---- JSON (bound vectors as hex; 64-bit ids as strings) ----
 
-// wireU64 marshals a uint64 as a QUOTED decimal string. Site ids use the full uint64
-// range, and JavaScript JSON round-trips numbers above 2^53 with silent precision loss —
-// which would corrupt the pack in transit and (correctly but confusingly) invalidate its
-// signature. Quoted strings survive every JSON implementation intact. Unmarshal tolerates
-// bare numbers too, for packs written by pre-string versions.
-type wireU64 uint64
-
-func (v wireU64) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + strconv.FormatUint(uint64(v), 10) + `"`), nil
-}
-
-func (v *wireU64) UnmarshalJSON(b []byte) error {
-	s := string(bytes.Trim(b, `"`))
-	u, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	*v = wireU64(u)
-	return nil
-}
-
+// All 64-bit ids on the wire are core.QuotedU64 (decimal strings) — see that type for why
+// JavaScript makes this mandatory. The canonical *signing* bytes still use raw binary
+// uint64, so quoting the JSON changes nothing a signature covers.
 type packWireJSON struct {
-	Name      string      `json:"name"`
-	VocabSeed wireU64     `json:"vocab_seed"`
-	Site      wireU64     `json:"site"`
-	Entries   []PackEntry `json:"entries"`
-	PublicKey []byte      `json:"public_key,omitempty"`
-	Signature []byte      `json:"signature,omitempty"`
+	Name      string         `json:"name"`
+	VocabSeed core.QuotedU64 `json:"vocab_seed"`
+	Site      core.QuotedU64 `json:"site"`
+	Entries   []PackEntry    `json:"entries"`
+	PublicKey []byte         `json:"public_key,omitempty"`
+	Signature []byte         `json:"signature,omitempty"`
 }
 
 func (p Pack) MarshalJSON() ([]byte, error) {
 	return json.Marshal(packWireJSON{
 		Name:      p.Name,
-		VocabSeed: wireU64(p.VocabSeed),
-		Site:      wireU64(p.Site),
+		VocabSeed: core.QuotedU64(p.VocabSeed),
+		Site:      core.QuotedU64(p.Site),
 		Entries:   p.Entries,
 		PublicKey: p.PublicKey,
 		Signature: p.Signature,
@@ -236,13 +220,13 @@ func (p *Pack) UnmarshalJSON(data []byte) error {
 }
 
 type packEntryJSON struct {
-	Seq      uint64 `json:"seq"`
-	Label    string `json:"label"`
-	BoundHex string `json:"bound_hex"`
+	Seq      core.QuotedU64 `json:"seq"`
+	Label    string         `json:"label"`
+	BoundHex string         `json:"bound_hex"`
 }
 
 func (e PackEntry) MarshalJSON() ([]byte, error) {
-	return json.Marshal(packEntryJSON{Seq: e.Seq, Label: e.Label, BoundHex: hvToHex(e.Bound)})
+	return json.Marshal(packEntryJSON{Seq: core.QuotedU64(e.Seq), Label: e.Label, BoundHex: hvToHex(e.Bound)})
 }
 
 func (e *PackEntry) UnmarshalJSON(data []byte) error {
@@ -254,6 +238,6 @@ func (e *PackEntry) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("bound_hex: %w", err)
 	}
-	e.Seq, e.Label, e.Bound = j.Seq, j.Label, hv
+	e.Seq, e.Label, e.Bound = uint64(j.Seq), j.Label, hv
 	return nil
 }

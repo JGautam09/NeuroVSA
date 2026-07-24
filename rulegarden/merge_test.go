@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/JGautam09/NeuroVSA/core"
 	"github.com/JGautam09/NeuroVSA/engine"
 )
 
@@ -134,7 +135,7 @@ func TestReplayBounds(t *testing.T) {
 	// than the limit.
 	inner := Pack{Version: 1, Seed: 99, Ticks: 0}
 	for d := 0; d < MaxMergeDepth+1; d++ {
-		outer := Pack{Version: 1, Seed: uint64(d + 1), Ticks: 0, Events: []Event{
+		outer := Pack{Version: 1, Seed: core.QuotedU64(d + 1), Ticks: 0, Events: []Event{
 			{Tick: 0, Op: "spawn_creature", X: 1, Y: 1},
 			{Tick: 0, Op: "merge_brains", Creature: 1, ForeignPack: &inner},
 		}}

@@ -121,7 +121,7 @@ func TestPackRejectsOversizedLabel(t *testing.T) {
 // action fails.
 func TestCertificateVerifiesExecutedAction(t *testing.T) {
 	mem, state, tools := certFixture(t) // exact lesson: chosen=RunTests, decisive margin
-	cert, err := IssueDecision(mem, state, tools)
+	cert, err := IssueDecision(mem, state, tools, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestCertificateVerifiesExecutedAction(t *testing.T) {
 	// so the executed action becomes the default (WriteFile) — different from the raw winner.
 	cert.MinMargin = core.Dimension
 	cert.InstinctAction = "WriteFile"
-	cert.ExecutedAction, cert.Basis = DerivePolicyOutcome(mem.Total(), cert.Candidates, len(cert.Contributors), cert.MinMargin, cert.InstinctAction)
+	cert.ExecutedAction, cert.Basis = DerivePolicyOutcome(mem.Total(), cert.Candidates, cert.Contributors, cert.MinMargin, cert.InstinctAction)
 	if cert.Basis != "instinct" || cert.ExecutedAction != "WriteFile" || cert.ExecutedAction == cert.Chosen {
 		t.Fatalf("policy derivation wrong: basis=%q executed=%q chosen=%q", cert.Basis, cert.ExecutedAction, cert.Chosen)
 	}

@@ -2,6 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<!-- Strict CSP — defense in depth behind the DOM/textContent rendering. script-src 'self'
+     blocks any injected inline script (an XSS could otherwise read the ed25519 signing seed
+     from same-origin IndexedDB); 'wasm-unsafe-eval' is required only to compile the Go wasm
+     engine. connect-src allows the opt-in registry fetch (https) and live-sync signaling
+     (ws/wss). No inline scripts or inline event handlers are used. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https: ws: wss:; object-src 'none'; base-uri 'self'; form-action 'none'">
 <title>RuleGarden — teach a creature, watch it think</title>
 <style>
   body { font-family: ui-monospace, Menlo, monospace; background: #0b1410; color: #cfe8d8; margin: 0; padding: 16px; }

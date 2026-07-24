@@ -12,8 +12,11 @@ import (
 	"github.com/JGautam09/NeuroVSA/core"
 )
 
-// Version is embedded in certificates as informational provenance.
-const Version = "0.3.0-dev"
+// Version is embedded in every issued certificate's SIGNED canonical bytes as provenance,
+// so it must track the release (a stale value attests a false engine version). Bump it with
+// each release. Verification of an EXISTING certificate uses that certificate's own recorded
+// EngineVersion field, so bumping this never invalidates receipts issued by older engines.
+const Version = "0.8.1"
 
 // DecisionCertificate is a machine-checkable receipt for one cleanup decision: it records
 // the exact inputs (state vector, candidate vocabulary, memory fingerprint) and outputs
@@ -27,7 +30,7 @@ const Version = "0.3.0-dev"
 // deterministic binary encoding, never JSON).
 type DecisionCertificate struct {
 	EngineVersion     string           `json:"engine_version"`
-	VocabSeed         uint64           `json:"vocab_seed"`
+	VocabSeed         uint64           `json:"-"` // quoted via certJSON (core.QuotedU64)
 	MemoryFingerprint string           `json:"memory_fingerprint"`
 	State             core.Hypervector `json:"-"`                // hex in JSON (see marshalers)
 	CandidateTokens   []string         `json:"candidate_tokens"` // ranking input order (tie-break order)
@@ -45,10 +48,15 @@ type DecisionCertificate struct {
 	Basis          string `json:"basis,omitempty"` // "lesson" | "generalization" | "instinct"
 	MinMargin      int    `json:"min_margin,omitempty"`
 	InstinctAction string `json:"instinct_action,omitempty"`
-	IssuedUnix     int64  `json:"issued_unix,omitempty"` // caller-supplied metadata
-	Note           string `json:"note,omitempty"`
-	PublicKey      []byte `json:"public_key,omitempty"`
-	Signature      []byte `json:"signature,omitempty"`
+	// GeneralizationRadius is the Hamming radius within which Contributors were collected.
+	// 0 means exact-only (the router's mode); a positive value means the certificate names
+	// the nearest analogical sources (with their per-contributor Distance), so a verifier
+	// re-derives a "generalization" basis from an identifiable source rather than trusting it.
+	GeneralizationRadius int    `json:"generalization_radius,omitempty"`
+	IssuedUnix           int64  `json:"issued_unix,omitempty"` // caller-supplied metadata
+	Note                 string `json:"note,omitempty"`
+	PublicKey            []byte `json:"public_key,omitempty"`
+	Signature            []byte `json:"signature,omitempty"`
 }
 
 // DerivePolicyOutcome maps a ranked cleanup (plus how many of the chosen action's exact
@@ -59,7 +67,7 @@ type DecisionCertificate struct {
 //   - total 0 or winner margin < minMargin  → (instinctAction, "instinct")
 //   - an exact contributor exists           → (winner, "lesson")
 //   - otherwise                             → (winner, "generalization")
-func DerivePolicyOutcome(total uint64, cands []core.Candidate, exactContributors, minMargin int, instinctAction string) (action, basis string) {
+func DerivePolicyOutcome(total uint64, cands []core.Candidate, contributors []Contributor, minMargin int, instinctAction string) (action, basis string) {
 	if len(cands) == 0 {
 		return instinctAction, "instinct"
 	}
@@ -70,10 +78,23 @@ func DerivePolicyOutcome(total uint64, cands []core.Candidate, exactContributors
 	if total == 0 || margin < minMargin {
 		return instinctAction, "instinct"
 	}
-	if exactContributors > 0 {
+	exact, near := 0, 0
+	for _, ct := range contributors {
+		if ct.Distance == 0 {
+			exact++
+		} else {
+			near++
+		}
+	}
+	if exact > 0 {
 		return cands[0].Token, "lesson"
 	}
-	return cands[0].Token, "generalization"
+	if near > 0 {
+		return cands[0].Token, "generalization"
+	}
+	// Decisive margin but NO identifiable source (exact or near): interference, not
+	// generalization. Report instinct rather than claim an analogy we cannot name.
+	return instinctAction, "instinct"
 }
 
 // VerifyResult reports the three independent checks a certificate can pass.
@@ -121,7 +142,7 @@ func RankCandidates(query core.Hypervector, tokens []string, hvs []core.Hypervec
 // certificate. Candidate vectors are derived from the memory's vocab seed (never carried),
 // so any verifier can re-derive them; the memory's convergent state is anchored by its
 // Fingerprint. Requires a seeded vocabulary (the engine default).
-func IssueDecision(mem *AssociativeMemory, state core.Hypervector, candidateTokens []string) (DecisionCertificate, error) {
+func IssueDecision(mem *AssociativeMemory, state core.Hypervector, candidateTokens []string, contributorRadius int) (DecisionCertificate, error) {
 	if len(candidateTokens) == 0 {
 		return DecisionCertificate{}, fmt.Errorf("no candidate tokens")
 	}
@@ -144,15 +165,16 @@ func IssueDecision(mem *AssociativeMemory, state core.Hypervector, candidateToke
 	}
 
 	return DecisionCertificate{
-		EngineVersion:     Version,
-		VocabSeed:         mem.VocabSeed(),
-		MemoryFingerprint: mem.Fingerprint(),
-		State:             state,
-		CandidateTokens:   append([]string(nil), candidateTokens...),
-		Chosen:            chosen.Token,
-		Distance:          chosen.Distance,
-		Candidates:        cands,
-		Contributors:      mem.Contributors(state.Bind(chosenHV), 0),
+		EngineVersion:        Version,
+		VocabSeed:            mem.VocabSeed(),
+		MemoryFingerprint:    mem.Fingerprint(),
+		State:                state,
+		CandidateTokens:      append([]string(nil), candidateTokens...),
+		Chosen:               chosen.Token,
+		Distance:             chosen.Distance,
+		Candidates:           cands,
+		Contributors:         mem.Contributors(state.Bind(chosenHV), contributorRadius),
+		GeneralizationRadius: contributorRadius,
 	}, nil
 }
 
@@ -174,7 +196,7 @@ func (c *DecisionCertificate) VerifyAgainst(mem *AssociativeMemory) VerifyResult
 		res.Detail = appendDetail(res.Detail, "memory fingerprint differs from the certified state")
 	}
 
-	reissued, err := IssueDecision(mem, c.State, c.CandidateTokens)
+	reissued, err := IssueDecision(mem, c.State, c.CandidateTokens, c.GeneralizationRadius)
 	if err != nil {
 		res.Detail = appendDetail(res.Detail, "re-execution failed: "+err.Error())
 		return res
@@ -191,7 +213,7 @@ func (c *DecisionCertificate) VerifyAgainst(mem *AssociativeMemory) VerifyResult
 	// from the re-executed ranking and require an exact match — so the receipt certifies the
 	// action actually taken, not just the raw cleanup winner.
 	if c.Basis != "" {
-		action, basis := DerivePolicyOutcome(mem.Total(), reissued.Candidates, len(reissued.Contributors), c.MinMargin, c.InstinctAction)
+		action, basis := DerivePolicyOutcome(mem.Total(), reissued.Candidates, reissued.Contributors, c.MinMargin, c.InstinctAction)
 		if action != c.ExecutedAction || basis != c.Basis {
 			res.DecisionOK = false
 			res.Detail = appendDetail(res.Detail, "re-execution does not reproduce the certified executed action/basis")
@@ -254,11 +276,13 @@ func (c *DecisionCertificate) CanonicalBytes() []byte {
 		writeU64(ct.ID.Site)
 		writeU64(ct.ID.Seq)
 		writeStr(ct.Label)
+		writeU64(uint64(int64(ct.Distance)))
 	}
 	writeStr(c.ExecutedAction)
 	writeStr(c.Basis)
 	writeU64(uint64(int64(c.MinMargin)))
 	writeStr(c.InstinctAction)
+	writeU64(uint64(int64(c.GeneralizationRadius)))
 	writeU64(uint64(c.IssuedUnix))
 	writeStr(c.Note)
 	return b.Bytes()
@@ -268,6 +292,9 @@ func (c *DecisionCertificate) CanonicalBytes() []byte {
 
 type certJSON struct {
 	StateHex string `json:"state_hex"`
+	// VocabSeed shadows the aliased uint64 field so it crosses JavaScript as a quoted
+	// string (see core.QuotedU64); the aliased field is json:"-".
+	VocabSeed core.QuotedU64 `json:"vocab_seed"`
 	*certAlias
 }
 
@@ -275,7 +302,7 @@ type certAlias DecisionCertificate
 
 func (c DecisionCertificate) MarshalJSON() ([]byte, error) {
 	a := certAlias(c)
-	return json.Marshal(certJSON{StateHex: hvToHex(c.State), certAlias: &a})
+	return json.Marshal(certJSON{StateHex: hvToHex(c.State), VocabSeed: core.QuotedU64(c.VocabSeed), certAlias: &a})
 }
 
 func (c *DecisionCertificate) UnmarshalJSON(data []byte) error {
@@ -289,6 +316,7 @@ func (c *DecisionCertificate) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("state_hex: %w", err)
 	}
 	c.State = hv
+	c.VocabSeed = uint64(j.VocabSeed)
 	return nil
 }
 
@@ -315,6 +343,12 @@ func hvFromHex(s string) (core.Hypervector, error) {
 	}
 	for i := 0; i < core.NumWords; i++ {
 		hv.Vector[i] = binary.LittleEndian.Uint64(raw[i*8:])
+	}
+	// Reject non-canonical vectors at the untrusted decode boundary — an excess bit would
+	// otherwise index the vote-counter array out of range downstream (see
+	// core.ValidateCanonical). This guards every JSON path: pack entries, certificate state.
+	if err := hv.ValidateCanonical(); err != nil {
+		return core.Hypervector{}, err
 	}
 	return hv, nil
 }

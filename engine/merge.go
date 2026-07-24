@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"hash"
 
 	"github.com/JGautam09/NeuroVSA/core"
 )
@@ -43,29 +44,30 @@ func (am *AssociativeMemory) Merge(other *AssociativeMemory) (MergeReport, error
 		return rep, nil
 	}
 
-	// Lock ordering by pointer-independent rule: take other as read, am as write. Distinct
-	// instances (checked above), and Merge is the only cross-memory operation, so a fixed
-	// acquire order (other first) cannot deadlock against another Merge taking (am, other)
-	// concurrently — callers merging in both directions concurrently must serialize
-	// externally; document over cleverness.
-	other.mu.RLock()
-	defer other.mu.RUnlock()
+	// NEVER hold two memory locks at once — that is what let A.Merge(B) and B.Merge(A)
+	// deadlock (each held its own RLock while waiting for the other's write lock). Instead:
+	// copy the source's immutable ledger under its read lock, RELEASE the source, then take
+	// only the destination's write lock. A ledger snapshot is safe to read lock-free because
+	// entries are value types (id, label, bound, removed) — copying them detaches from the
+	// source's future mutations.
+	srcSeed, srcReadOnly, srcLedger := other.snapshotForMerge()
+
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
 	if am.readOnly {
 		return rep, fmt.Errorf("cannot merge into a read-only (OpenReadOnly) memory")
 	}
-	if other.readOnly {
+	if srcReadOnly {
 		return rep, fmt.Errorf("cannot merge from a read-only memory: its ledger is not loaded")
 	}
-	if am.vocabSeed != other.vocabSeed {
-		return rep, fmt.Errorf("vocab seed mismatch (%d vs %d): memories from different vocabularies cannot merge — their vectors do not mean the same thing", am.vocabSeed, other.vocabSeed)
+	if am.vocabSeed != srcSeed {
+		return rep, fmt.Errorf("vocab seed mismatch (%d vs %d): memories from different vocabularies cannot merge — their vectors do not mean the same thing", am.vocabSeed, srcSeed)
 	}
 
 	// Validation pass first: a site collision must abort with NO partial effects.
-	for i := range other.ledger {
-		oe := &other.ledger[i]
+	for i := range srcLedger {
+		oe := &srcLedger[i]
 		if idx, ok := am.index[oe.id]; ok {
 			le := &am.ledger[idx]
 			if le.label != oe.label || le.bound != oe.bound {
@@ -74,8 +76,8 @@ func (am *AssociativeMemory) Merge(other *AssociativeMemory) (MergeReport, error
 		}
 	}
 
-	for i := range other.ledger {
-		oe := &other.ledger[i]
+	for i := range srcLedger {
+		oe := &srcLedger[i]
 		if idx, ok := am.index[oe.id]; ok {
 			le := &am.ledger[idx]
 			rep.Shared++
@@ -110,6 +112,18 @@ func (am *AssociativeMemory) Merge(other *AssociativeMemory) (MergeReport, error
 	return rep, nil
 }
 
+// snapshotForMerge copies the fields Merge needs from a source memory under a single read
+// lock, then returns — so the caller can proceed holding only the destination's lock. The
+// ledger slice is a fresh copy; its ledgerEntry values (id, label, bound, removed) are
+// self-contained, so nothing aliases the source after this returns.
+func (am *AssociativeMemory) snapshotForMerge() (vocabSeed uint64, readOnly bool, ledger []ledgerEntry) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	ledger = make([]ledgerEntry, len(am.ledger))
+	copy(ledger, am.ledger)
+	return am.vocabSeed, am.readOnly, ledger
+}
+
 // Fingerprint returns a SHA-256 over the memory's CONVERGENT state: vocab seed, active
 // total, and every ledger entry (including tombstones) in canonical order with its bound
 // vector. Writer-local identity (site, nextSeq) is deliberately EXCLUDED — two replicas that
@@ -118,9 +132,36 @@ func (am *AssociativeMemory) Merge(other *AssociativeMemory) (MergeReport, error
 func (am *AssociativeMemory) Fingerprint() string {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
-
 	h := sha256.New()
 	h.Write([]byte("NVSA-FP1"))
+	am.hashConvergentStateLocked(h)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// LocalStateFingerprint is Fingerprint PLUS the writer-local identity (site and next
+// sequence). Where Fingerprint answers "have these replicas converged?" (writer identity
+// excluded so two synced replicas match), LocalStateFingerprint answers "are these two
+// memories identical in every byte that can affect FUTURE behavior?" — which is what a
+// determinism hash needs. It covers vocab seed, active total, every ledger entry with its
+// bound vector and tombstone state, AND site/nextSeq, so a later store, forget, merge, or
+// contributor query cannot make two equal-fingerprint memories diverge.
+func (am *AssociativeMemory) LocalStateFingerprint() string {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	h := sha256.New()
+	h.Write([]byte("NVSA-LOCALFP1"))
+	am.hashConvergentStateLocked(h)
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], am.site)
+	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(buf[:], am.nextSeq)
+	h.Write(buf[:])
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// hashConvergentStateLocked writes the convergent state (vocab seed, total, canonical
+// ledger with bound vectors) into h. Caller holds am.mu (at least RLock).
+func (am *AssociativeMemory) hashConvergentStateLocked(h hash.Hash) {
 	var buf [8]byte
 	le := binary.LittleEndian
 	le.PutUint64(buf[:], am.vocabSeed)
@@ -146,5 +187,4 @@ func (am *AssociativeMemory) Fingerprint() string {
 			h.Write(buf[:])
 		}
 	}
-	return hex.EncodeToString(h.Sum(nil))
 }

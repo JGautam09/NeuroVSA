@@ -203,3 +203,39 @@ func TestLiveSyncGossipConvergence(t *testing.T) {
 		}
 	}
 }
+
+// TestApplyPackRejectsForgedLabel is the P1-4 regression: an imported lesson whose bound
+// vector contradicts the percept/action its label claims must be refused — a signature over
+// an inconsistent (label, vector) pair is not evidence the label explains the vector.
+func TestApplyPackRejectsForgedLabel(t *testing.T) {
+	src := syncWorld(t, 91)
+	teach(t, src, "predator", DistNear, "E", ActMoveAway)
+
+	packs, err := src.BrainPacks("forge", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packs) != 1 || len(packs[0].Entries) != 1 {
+		t.Fatalf("expected one single-entry pack, got %+v", packs)
+	}
+	// Keep the bound vector (encodes predator,near,E → move-away) but relabel it to CLAIM a
+	// harmless-looking different lesson. A forged pack.
+	forged := packs[0]
+	forged.Entries = append([]engine.PackEntry(nil), forged.Entries...)
+	forged.Entries[0].Label = "sees:food,near,N → eat"
+
+	dst := syncWorld(t, 92)
+	err = dst.ApplyLessonPackTo(forged, 1)
+	if err == nil || !strings.Contains(err.Error(), "contradicts its label") {
+		t.Fatalf("forged label/vector pair must be refused, got err = %v", err)
+	}
+	// And the brain is untouched (atomic refusal).
+	if len(dst.Creatures[0].Brain.Lessons()) != 0 {
+		t.Fatal("refused forged pack left lessons behind")
+	}
+
+	// The honest, unmodified pack still applies.
+	if err := dst.ApplyLessonPackTo(packs[0], 1); err != nil {
+		t.Fatalf("honest pack must apply: %v", err)
+	}
+}

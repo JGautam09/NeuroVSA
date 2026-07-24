@@ -27,7 +27,7 @@ func (p *Pack) CanonicalBytes() []byte {
 		Seed    uint64  `json:"seed"`
 		Ticks   int     `json:"ticks"`
 		Events  []Event `json:"events"`
-	}{p.Version, p.Seed, p.Ticks, p.Events}
+	}{p.Version, uint64(p.Seed), p.Ticks, p.Events}
 	b, err := json.Marshal(shadow)
 	if err != nil {
 		return nil // plain-data structs cannot fail to marshal; guard defensively

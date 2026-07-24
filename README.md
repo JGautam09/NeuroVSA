@@ -154,8 +154,11 @@ Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [develope
 - Bit-sliced `Bundle` (the last non-word-level primitive) to cut encode latency.
 - Arena on standard datasets (CLINC150 / Banking77) and a full-MiniLM baseline.
 - Optional dimensionality reduction (HDC models are typically oversized at 10,000 bits).
-- AST encoder v2: role–filler encoding of parameter/return *types*, statement kinds, and
-  control flow (the current encoder only captures names — see `docs/developer_guide.md`).
+
+**Shipped since the original roadmap:** the AST encoder v2 (role–filler encoding of
+parameter/return *types*, statement kinds, and control flow) landed in v0.7.0 and is the
+server default (`-ast-encoder 2`; `1` keeps the legacy names-only encoder) — measured against
+v1 in [`BENCHMARKS.md`](BENCHMARKS.md).
 
 ## Contributing & security
 

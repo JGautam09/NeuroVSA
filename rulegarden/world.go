@@ -194,6 +194,14 @@ func (w *World) applyDepth(e Event, depth int) error {
 		if err := validLessonPack(e.LessonPack); err != nil {
 			return err
 		}
+		// P1-4: a signature proves WHO signed a (label, vector) pair, not that the label
+		// explains the vector. Reject any imported lesson whose bound vector does not match
+		// the percept/action its human-readable label claims — the label is the machine-
+		// readable source of truth for transfers, so it must not be forgeable relative to
+		// the vector it is presented alongside.
+		if err := w.validateLessonPackContent(e.LessonPack); err != nil {
+			return err
+		}
 		if err := c.applyLessonPack(func(scratch *engine.AssociativeMemory) error {
 			_, err := engine.ApplyPack(scratch, e.LessonPack)
 			return err
@@ -298,19 +306,21 @@ func (w *World) act(c *Creature, action string, target *Object) {
 // CanonicalBytes (see sign.go); replay refuses a signed pack whose signature no longer
 // matches its content, while unsigned packs replay as before.
 type Pack struct {
-	Version   int     `json:"version"`
-	Seed      uint64  `json:"seed"`
-	Ticks     int     `json:"ticks"`
-	Events    []Event `json:"events"`
-	PublicKey []byte  `json:"public_key,omitempty"`
-	Signature []byte  `json:"signature,omitempty"`
+	Version int            `json:"version"`
+	Seed    core.QuotedU64 `json:"seed"` // quoted: a seed > 2^53 must survive a JS parse/stringify or replay diverges
+	Ticks   int            `json:"ticks"`
+	Events  []Event        `json:"events"`
+	// PublicKey/Signature: an optional ed25519 signature over CanonicalBytes (binary, never
+	// JSON), so quoting the seed above changes nothing the signature covers.
+	PublicKey []byte `json:"public_key,omitempty"`
+	Signature []byte `json:"signature,omitempty"`
 }
 
 // Export captures the world as a replayable pack.
 func (w *World) Export() Pack {
 	events := make([]Event, len(w.Events))
 	copy(events, w.Events)
-	return Pack{Version: 1, Seed: w.Seed, Ticks: w.Tick, Events: events}
+	return Pack{Version: 1, Seed: core.QuotedU64(w.Seed), Ticks: w.Tick, Events: events}
 }
 
 // Replay reconstructs a world from a pack by re-running its event log against its seed:
@@ -341,7 +351,7 @@ func replayDepth(p Pack, depth int) (*World, error) {
 	if len(p.Events) > MaxReplayEvents {
 		return nil, fmt.Errorf("pack carries %d events, exceeding the limit of %d", len(p.Events), MaxReplayEvents)
 	}
-	w := NewWorld(p.Seed)
+	w := NewWorld(uint64(p.Seed))
 	i := 0
 	for w.Tick <= p.Ticks {
 		for i < len(p.Events) && p.Events[i].Tick == w.Tick {
@@ -405,14 +415,13 @@ func (w *World) Hash() string {
 	sort.Slice(crs, func(a, b int) bool { return crs[a].ID < crs[b].ID })
 	for _, c := range crs {
 		fmt.Fprintf(h, "C|%d|%d|%d\n", c.ID, c.X, c.Y)
-		m := c.Brain.Memory().Matrix()
-		for i := 0; i < core.NumWords; i++ {
-			le.PutUint64(buf[:], m.Vector[i])
-			h.Write(buf[:])
-		}
-		for _, rec := range c.Brain.Lessons() {
-			fmt.Fprintf(h, "L|%s|%s|%v\n", rec.ID, rec.Label, rec.Removed)
-		}
+		// The brain's COMPLETE local state — vocab seed, every ledger entry with its bound
+		// vector and tombstone, plus writer site/seq — not just the materialized matrix and
+		// label metadata. Two brains with the same matrix but different underlying
+		// associations (possible: the matrix is a many-to-one majority vote) would otherwise
+		// hash equal, then diverge on a later forget/merge. This makes "same hash ⇒
+		// behaviorally identical from here on" actually true.
+		fmt.Fprintf(h, "B|%s\n", c.Brain.Memory().LocalStateFingerprint())
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -476,6 +485,32 @@ func validLessonPack(p *engine.Pack) error {
 	}
 	if len(p.Signature) > 0 && !p.VerifySignature() {
 		return fmt.Errorf("lesson pack signature is invalid — content does not match its author's signature")
+	}
+	return nil
+}
+
+// validateLessonPackContent verifies every entry's bound vector matches the percept/action
+// its label claims (bound == EncodePercept(percept) ⊗ ActionHV(action)), re-deriving the
+// expected vector from the symbolic label. A RuleGarden lesson's label IS its machine-
+// readable meaning (Transfer parses it), so an imported label that disagrees with its vector
+// is rejected — a signature over inconsistent (label, vector) pairs is not evidence the
+// label explains the vector.
+func (w *World) validateLessonPackContent(p *engine.Pack) error {
+	for _, e := range p.Entries {
+		percept, action, err := parseLessonLabel(e.Label)
+		if err != nil {
+			return fmt.Errorf("lesson pack entry seq %d: label %q is not a valid RuleGarden lesson", e.Seq, e.Label)
+		}
+		if err := ValidPercept(percept); err != nil {
+			return fmt.Errorf("lesson pack entry seq %d: %w", e.Seq, err)
+		}
+		actHV, err := w.Vocab.ActionHV(action)
+		if err != nil {
+			return fmt.Errorf("lesson pack entry seq %d: %w", e.Seq, err)
+		}
+		if want := w.Vocab.EncodePercept(percept).Bind(actHV); want != e.Bound {
+			return fmt.Errorf("lesson pack entry seq %d: bound vector contradicts its label %q (forged label/vector pair)", e.Seq, e.Label)
+		}
 	}
 	return nil
 }
@@ -590,7 +625,7 @@ func (w *World) CertifyCreature(id int) (engine.DecisionCertificate, []byte, err
 	for i, a := range Actions {
 		tokens[i] = "action:" + a
 	}
-	cert, err := engine.IssueDecision(mem, w.Vocab.EncodePercept(d.Percept), tokens)
+	cert, err := engine.IssueDecision(mem, w.Vocab.EncodePercept(d.Percept), tokens, GeneralizationRadius)
 	if err != nil {
 		return engine.DecisionCertificate{}, nil, err
 	}
@@ -598,7 +633,7 @@ func (w *World) CertifyCreature(id int) (engine.DecisionCertificate, []byte, err
 	cert.MinMargin = MinDecisionMargin
 	cert.InstinctAction = instinctActionToken
 	cert.ExecutedAction, cert.Basis = engine.DerivePolicyOutcome(
-		mem.Total(), cert.Candidates, len(cert.Contributors), MinDecisionMargin, instinctActionToken)
+		mem.Total(), cert.Candidates, cert.Contributors, MinDecisionMargin, instinctActionToken)
 
 	// Guard: the certified executed action MUST equal what the creature actually did. Same
 	// policy on both sides, so this only fires on a real bug — never ship a contradicting
