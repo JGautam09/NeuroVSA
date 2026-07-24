@@ -228,6 +228,7 @@ First public release.
   the arena) instead of unbacked "breakthrough" claims.
 - Module path is now `github.com/JGautam09/NeuroVSA` (go-get-able).
 
+[0.8.1]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.8.1
 [0.8.0]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.8.0
 [0.7.0]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.7.0
 [0.6.0]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.6.0
