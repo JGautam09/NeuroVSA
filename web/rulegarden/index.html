@@ -108,12 +108,27 @@
       <button id="regLoad" title="fetch the manifest from this URL — the page makes no network calls until you press this">Load</button>
     </div>
     <div id="regList" class="muted" style="margin-top:4px">Not loaded. The signature inside each pack is what gets verified — the manifest is only a catalog.</div>
+    <h2 style="margin-top:10px">Live sync <span class="muted" style="font-weight:normal">(P2P, no server)</span></h2>
+    <div>
+      <button id="syncHost" title="create an offer blob; send it to your peer">Host</button>
+      <button id="syncJoin" title="paste the host's offer blob below first, then click">Join</button>
+      <button id="syncAnswer" title="host only: paste the joiner's answer blob below first, then click">Accept answer</button>
+      <span class="muted" id="syncStatus">offline</span>
+    </div>
+    <textarea id="syncBlob" placeholder="offer/answer blob — copy to your peer, or paste theirs here" style="height:44px"></textarea>
+    <div class="muted" style="font-size:11px">
+      Brains sync creature-to-creature over a WebRTC data channel — teaches and forgets flow
+      both ways while connected; the selected creature is the one that learns. Worlds need
+      <b>different seeds</b>. STUN only (no TURN relay): some strict-NAT networks won't
+      connect — that's a stated limit, not a surprise.
+    </div>
   </div>
 </div>
 
 <script src="wasm_exec.js"></script>
 <script src="keys.js"></script>
 <script src="registry.js"></script>
+<script src="sync.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

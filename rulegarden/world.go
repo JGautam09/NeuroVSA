@@ -62,6 +62,11 @@ type Event struct {
 	// merged world remains completely defined by its own seed + event log (worlds quote the
 	// worlds they learned from — replay stays bit-exact).
 	ForeignPack *Pack `json:"foreign_pack,omitempty"`
+	// LessonPack embeds a FLAT engine lesson pack for apply_pack / revoke_pack events — the
+	// live-sync vehicle. Unlike ForeignPack it contains no world events, so a sync stream
+	// never grows merge nesting; applying is an idempotent NeuroMesh merge and revoking
+	// creates tombstones deterministically at replay time.
+	LessonPack *engine.Pack `json:"lesson_pack,omitempty"`
 }
 
 // World is fully defined by (Seed, Events): replaying the log against the seed reproduces a
@@ -180,6 +185,34 @@ func (w *World) applyDepth(e Event, depth int) error {
 		}
 		if err := w.mergeBrains(c, *e.ForeignPack, depth); err != nil {
 			return err
+		}
+	case "apply_pack":
+		c, err := w.creature(e.Creature)
+		if err != nil {
+			return err
+		}
+		if err := validLessonPack(e.LessonPack); err != nil {
+			return err
+		}
+		if err := c.applyLessonPack(func(scratch *engine.AssociativeMemory) error {
+			_, err := engine.ApplyPack(scratch, e.LessonPack)
+			return err
+		}); err != nil {
+			return fmt.Errorf("apply_pack: %w", err)
+		}
+	case "revoke_pack":
+		c, err := w.creature(e.Creature)
+		if err != nil {
+			return err
+		}
+		if err := validLessonPack(e.LessonPack); err != nil {
+			return err
+		}
+		if err := c.applyLessonPack(func(scratch *engine.AssociativeMemory) error {
+			engine.RevokePack(scratch, e.LessonPack) // 0 removals is fine — revoking is idempotent
+			return nil
+		}); err != nil {
+			return fmt.Errorf("revoke_pack: %w", err)
 		}
 	default:
 		return fmt.Errorf("unknown event op %q", e.Op)
@@ -422,6 +455,94 @@ func (w *World) mergeBrains(c *Creature, foreign Pack, depth int) error {
 // MergeBrainsFrom is the public API behind merge_brains: it applies (and logs) the event.
 func (w *World) MergeBrainsFrom(foreign Pack, creatureID int) error {
 	return w.Apply(Event{Op: "merge_brains", Creature: creatureID, ForeignPack: &foreign})
+}
+
+// ---- live sync (flat lesson-pack events) ----
+
+// MaxLessonPackEntries bounds a single apply_pack/revoke_pack event. A whole healthy brain
+// is ~RecommendedMaxActiveAssociations lessons, so this cap is generous while keeping a
+// hostile pack from bloating the event log.
+const MaxLessonPackEntries = 1024
+
+// validLessonPack is the untrusted-input gate for sync events: present, bounded, and — the
+// same policy as signed world packs — a SIGNED pack whose signature does not verify is
+// refused outright (unsigned packs are allowed and surfaced as such by the UI layer).
+func validLessonPack(p *engine.Pack) error {
+	if p == nil {
+		return fmt.Errorf("event missing lesson pack")
+	}
+	if len(p.Entries) > MaxLessonPackEntries {
+		return fmt.Errorf("lesson pack carries %d entries, exceeding the limit of %d", len(p.Entries), MaxLessonPackEntries)
+	}
+	if len(p.Signature) > 0 && !p.VerifySignature() {
+		return fmt.Errorf("lesson pack signature is invalid — content does not match its author's signature")
+	}
+	return nil
+}
+
+// applyLessonPack runs op against a scratch clone of the creature's brain memory and commits
+// atomically — a failing op leaves the brain untouched (the same discipline as mergeBrains).
+func (c *Creature) applyLessonPack(op func(*engine.AssociativeMemory) error) error {
+	img, err := c.Brain.Memory().MarshalBinary()
+	if err != nil {
+		return err
+	}
+	scratch := engine.NewAssociativeMemory()
+	if err := scratch.UnmarshalBinary(img); err != nil {
+		return err
+	}
+	if err := op(scratch); err != nil {
+		return err
+	}
+	c.Brain.replaceMemory(scratch)
+	return nil
+}
+
+// ApplyLessonPackTo installs a flat lesson pack into a creature's brain as a logged,
+// replayable apply_pack event — the receive half of live sync. Idempotent: re-applying the
+// same pack is a no-op merge.
+func (w *World) ApplyLessonPackTo(p engine.Pack, creatureID int) error {
+	return w.Apply(Event{Op: "apply_pack", Creature: creatureID, LessonPack: &p})
+}
+
+// RevokeLessonPackFrom tombstones a pack's entries in a creature's brain as a logged,
+// replayable revoke_pack event — how a peer's forget propagates during live sync.
+func (w *World) RevokeLessonPackFrom(p engine.Pack, creatureID int) error {
+	return w.Apply(Event{Op: "revoke_pack", Creature: creatureID, LessonPack: &p})
+}
+
+// BrainPacks exports a creature's ACTIVE lessons as flat engine packs, one per writer site
+// — the send half of live sync (both the on-connect snapshot and the after-mutation
+// broadcast; receivers dedupe via merge idempotence). One pack per site is what keeps every
+// lesson under its ORIGINAL author identity: a brain that already absorbed a friend's
+// lessons relays them with the friend's site intact, never re-attributed.
+func (w *World) BrainPacks(name string, creatureID int) ([]engine.Pack, error) {
+	c, err := w.creature(creatureID)
+	if err != nil {
+		return nil, err
+	}
+	return engine.PacksFromMemory(name, c.Brain.Memory()), nil
+}
+
+// RevocationPack builds the pack a peer needs to tombstone one forgotten lesson. The bound
+// vector is intentionally zero — revocation is by (site, seq) identity, not content — so a
+// revocation pack can never be replayed as an apply_pack to re-teach the lesson.
+func (w *World) RevocationPack(name string, creatureID int, lesson engine.AssociationID) (engine.Pack, error) {
+	c, err := w.creature(creatureID)
+	if err != nil {
+		return engine.Pack{}, err
+	}
+	for _, rec := range c.Brain.Lessons() {
+		if rec.ID == lesson {
+			return engine.Pack{
+				Name:      name,
+				VocabSeed: c.Brain.Memory().VocabSeed(),
+				Site:      lesson.Site,
+				Entries:   []engine.PackEntry{{Seq: lesson.Seq, Label: rec.Label}},
+			}, nil
+		}
+	}
+	return engine.Pack{}, fmt.Errorf("creature %d has no lesson %s", creatureID, lesson)
 }
 
 // ---- receipts (ProofRoute in costume) ----

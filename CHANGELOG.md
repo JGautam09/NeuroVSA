@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Live world sync (trust arc, Phase C)** — two players connect their worlds over a
+  **WebRTC data channel**: world data never touches a server. Signaling is manual
+  copy/paste (no infrastructure; the same trust gesture as pasting a pack), STUN-only —
+  the no-TURN limit is stated plainly. Selected creatures sync creature-to-creature:
+  teaches/transfers broadcast as **flat, signed lesson packs**; **forgets propagate as
+  revocations**; everything applies through new logged `apply_pack` / `revoke_pack` world
+  events, so a live-synced world **still replays bit-exactly**. Convergence is property-
+  tested (bidirectional, 3-peer seeded gossip, tombstone propagation, reconnect
+  idempotence) and was proven live between two browser tabs.
+- **`engine.PacksFromMemory`** — lossless multi-site snapshot: one single-site pack per
+  writer site, so a brain that absorbed lessons from several authors relays each under its
+  **original author's site** (never re-attributed). `rulegarden.World` gains
+  `BrainPacks` / `ApplyLessonPackTo` / `RevokeLessonPackFrom` / `RevocationPack`
+  (revocations carry zero bound vectors — revocation is by identity, so a revocation pack
+  can never be replayed as a teach).
+- Wasm bridge: `brainPacks`, `revocationPack`, `inspectLessonPack`, `applyRemotePack`,
+  `applyRemoteRevoke`; browser: `sync.js` transport + a Live sync panel with a per-
+  connection peer-identity confirm (packs signed by a different key than the connected
+  peer are refused).
+
+### Fixed
+- **`engine.Pack` wire format: 64-bit ids are now quoted strings in JSON.** Site ids use
+  the full uint64 range, and JavaScript's JSON round-trip silently corrupts numbers above
+  2^53 — which invalidated pack signatures in transit (the tamper check caught it; the
+  wire format was at fault). Unmarshal still accepts bare numbers from earlier writers;
+  a regression test pins the quoting.
+
 ## [0.5.0] — 2026-07-24 "The Registry Is a Pull Request"
 
 ### Added
