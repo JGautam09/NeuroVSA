@@ -32,6 +32,31 @@ To keep the claims honest, the repo ships [**the arena**](arena/) — a head-to-
 
 ---
 
+## The flagship trio — RuleGarden, NeuroMesh & ProofRoute
+
+Those genuine strengths aren't abstract — they ship as three composed capabilities, built as
+**one product line, not three demos**. Every claim below is backed by a test, not a promise:
+
+| Capability | What it is | Why it's real |
+| :-- | :-- | :-- |
+| **RuleGarden** | A deterministic, teachable artificial-life world with glass-box VSA brains, running **entirely in a browser tab** (Go → WASM — no model file, no server). Teach a creature by example, transfer a lesson by analogy, forget it *exactly*. | A world **is** its `seed + event log`; the same pack replays to a **bit-identical world hash**, golden-tested in CI on Linux *and* macOS. |
+| **NeuroMesh** | The associative memory is a **CRDT**: merge two players' worlds and your creature absorbs every lesson, each keeping its **foreign site id** in the ledger — and forgetting propagates through the merge. | Commutativity, associativity, idempotence, and convergence under gossip interleavings are **property-tested** to bit-exact fingerprints. |
+| **ProofRoute** | Every decision can emit a **re-executable certificate** (state, ranked candidates, contributing lessons, memory fingerprint; optional ed25519 signature). Signed **lesson packs** carry a policy as a portable mini-replica. | Anyone holding the brain re-executes a receipt to **bit-for-bit agreement**; the `nvsa-verify` CLI re-runs a browser-issued receipt natively, and any tampering breaks *both* the signature and the re-execution. |
+
+RuleGarden is the flagship you can touch; **NeuroMesh** and **ProofRoute** are engine
+capabilities that power its headline verbs — *merge worlds*, *decision receipts* — and stand
+alone as library value. Every choice is labeled **lesson / generalization / instinct** (recall,
+analogy, or an honest shrug), with the causing lesson named.
+
+```bash
+sh web/rulegarden/build.sh && python3 -m http.server 8090 -d web/rulegarden
+# open http://localhost:8090 — teach a creature, forget the lesson, watch the numbers not lie
+```
+
+Full guide and measured limits (finite brain capacity, merge caveats): [`rulegarden/README.md`](rulegarden/README.md).
+
+---
+
 ## Highlights
 
 - **Zero external ML dependencies.** Pure-Go bitwise core; the only third-party import is `gorilla/websocket` for the optional API.
@@ -102,12 +127,14 @@ go test ./arena/ -run TestArenaReport -v       # merge → arena/ARENA_RESULTS.m
 ## Architecture
 
 ```
-core/     VSA vector physics — bind/bundle/permute, POPCNT Hamming, item-memory dictionary
-parser/   Go AST → hypervector structural encoder
-engine/   Counter-vector associative memory (+ mmap), HDC decoder, agent trajectory router
-api/      Concurrent WebSocket server (per-connection agent state, loopback origin check)
-ui/       React 18 + Tailwind streaming terminal
-arena/    Honest HDC-vs-neural routing benchmark (Go + Python)
+core/       VSA vector physics — bind/bundle/permute, POPCNT Hamming, seeded item memory
+parser/     Go AST → hypervector structural encoder
+engine/     CRDT associative memory (ledger + mmap + merge), decoder, router, certificates
+rulegarden/ Deterministic teachable world (headless core; wasm bridge in cmd/, page in web/)
+api/        Concurrent WebSocket server (per-connection agent state, loopback origin check)
+ui/         React 18 + Tailwind streaming terminal
+arena/      Honest HDC-vs-neural routing benchmark (Go + Python)
+cmd/        rulegarden-wasm bridge · nvsa-verify receipt/pack verifier
 ```
 
 Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [developer guide](docs/developer_guide.md) · [user manual](docs/user_manual.md).

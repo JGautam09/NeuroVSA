@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RuleGarden — teach a creature, watch it think</title>
+<style>
+  body { font-family: ui-monospace, Menlo, monospace; background: #0b1410; color: #cfe8d8; margin: 0; padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; color: #7dffb0; }
+  .sub { color: #6fa885; font-size: 12px; margin-bottom: 12px; }
+  .row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  canvas { background: #08100c; border: 1px solid #1e3a2a; image-rendering: pixelated; cursor: crosshair; }
+  .panel { background: #0e1a13; border: 1px solid #1e3a2a; border-radius: 6px; padding: 10px; width: 420px; font-size: 12px; }
+  .panel h2 { font-size: 13px; margin: 0 0 6px; color: #7dffb0; }
+  button { background: #143223; color: #aef0c8; border: 1px solid #2c5a3e; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; }
+  button:hover { background: #1c4530; }
+  select, input, textarea { background: #08100c; color: #cfe8d8; border: 1px solid #2c5a3e; border-radius: 4px; font: inherit; padding: 2px 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 4px 0; }
+  td, th { border: 1px solid #1e3a2a; padding: 2px 6px; text-align: left; }
+  .basis-lesson { color: #7dffb0; }
+  .basis-generalization { color: #ffd479; }
+  .basis-instinct { color: #8fa4b8; }
+  .removed { text-decoration: line-through; color: #5c7264; }
+  .muted { color: #6fa885; }
+  #log { height: 90px; overflow-y: auto; background: #08100c; border: 1px solid #1e3a2a; padding: 4px; margin-top: 6px; white-space: pre-wrap; }
+  textarea { width: 100%; height: 60px; }
+  .lesson-row td { vertical-align: middle; }
+</style>
+</head>
+<body>
+<h1>RuleGarden</h1>
+<div class="sub">A deterministic world with glass-box creature brains — teach by example, transfer by analogy, forget exactly. Pure VSA math, no model, runs entirely in this tab.</div>
+
+<div class="row">
+  <div>
+    <div style="margin-bottom:6px">
+      seed <input id="seed" value="42" size="8">
+      <button id="newWorld">New world</button>
+      <button id="tick1">Tick ×1</button>
+      <button id="tick10">Tick ×10</button>
+      <button id="play">▶ Play</button>
+      <span class="muted">tick <span id="tickNo">0</span></span>
+    </div>
+    <div style="margin-bottom:6px">
+      place on click:
+      <select id="spawnKind">
+        <option value="creature">creature</option>
+        <option value="food">food</option>
+        <option value="predator">predator</option>
+        <option value="guard">guard</option>
+        <option value="prey">prey</option>
+        <option value="intruder">intruder</option>
+        <option value="water">water</option>
+      </select>
+    </div>
+    <canvas id="grid" width="480" height="480"></canvas>
+    <div id="log"></div>
+  </div>
+
+  <div class="panel" id="inspector">
+    <h2>Creature inspector</h2>
+    <div id="noSelection" class="muted">Click a creature (green) to inspect its brain.</div>
+    <div id="selection" style="display:none">
+      <div>creature <b id="selId"></b> — last decision:</div>
+      <div id="decision"></div>
+      <h2 style="margin-top:10px">Teach a lesson</h2>
+      <div>
+        when I see <select id="tSees"></select>
+        <select id="tDist"><option>near</option><option>far</option></select>
+        <select id="tDir"><option>N</option><option>S</option><option>E</option><option>W</option></select>
+        → <select id="tAct"><option>move-away</option><option>move-toward</option><option>eat</option><option>wander</option></select>
+      </div>
+      <div style="margin-top:4px">
+        <button id="teach">Teach</button>
+        <button id="teachCurrent" title="teach using the creature's current percept">Teach from current percept</button>
+      </div>
+      <h2 style="margin-top:10px">Transfer by analogy</h2>
+      <div>
+        lesson <select id="xLesson"></select>
+        subject → <select id="xSees"></select>
+        <button id="transfer">Transfer</button>
+      </div>
+      <h2 style="margin-top:10px">Lessons (the brain's ledger)</h2>
+      <table id="lessons"></table>
+    </div>
+    <h2 style="margin-top:10px">Share / replay / merge</h2>
+    <div>
+      <button id="export">Export world</button>
+      <button id="import">Import & replay</button>
+      <button id="mergeBrains" title="merge every creature brain from the pasted world pack into the selected creature (NeuroMesh)">Merge brains → selected</button>
+      <button id="receipt" title="download a replay-verifiable decision receipt + brain image for the selected creature (ProofRoute)">Receipt</button>
+      <button id="hash">World hash</button>
+    </div>
+    <textarea id="pack" placeholder="world pack JSON (seed + event log)"></textarea>
+  </div>
+</div>
+
+<script src="wasm_exec.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
