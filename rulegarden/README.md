@@ -22,7 +22,7 @@ python3 -m http.server 8090 -d web/rulegarden   # any static server works
 | **Transfer** | Reuse a lesson with a new subject (*predator→guard*) — lineage recorded. | Role substitution + re-encoding (the "dollar of Mexico" move) |
 | **Forget** | Remove one lesson; behavior reverts, provably — the candidate table returns **bit-identical** to before the lesson existed. | Exact unlearning: O(D) counter decrement + tombstone |
 | **Merge brains** | Paste a friend's world; your creature absorbs every lesson in it, each keeping its **foreign site id** in the ledger. | NeuroMesh CRDT merge (commutative, idempotent, tombstones propagate) |
-| **Receipt** | Download a decision receipt + brain image; verify anywhere: `nvsa-verify -cert receipt.json -memory brain.bin` re-executes the decision **bit-for-bit**. | ProofRoute certificate anchored to the memory fingerprint |
+| **Receipt** | Download a decision receipt + brain image — **ed25519-signed by your browser identity** — and verify anywhere: `nvsa-verify -cert receipt.json -memory brain.bin` re-executes the decision **bit-for-bit** (`-require-signature` for strict mode). | ProofRoute certificate anchored to the memory fingerprint |
 
 Toggle **/trace-style inspection** by clicking a creature: the inspector shows its percept,
 the ranked action table with exact Hamming distances, and *which stored lesson caused the
@@ -58,8 +58,12 @@ worlds they learned from.
 - **Generalization is bounded to the vocabulary.** Creatures generalize across shared roles
   (predator→guard), not across meanings — there is no semantic embedding anywhere in this
   system, by design (see the repo's [arena](../arena/) for why).
-- **Receipts are unsigned in the browser MVP** (replay-verifiable only). Signed lesson packs
-  exist at the Go API/CLI level; browser key management is out of scope for now.
+- **Browser keys are a game identity, not a credential.** Receipts and exported worlds are
+  ed25519-signed by a per-browser key (generated in the wasm engine, seed persisted in
+  IndexedDB with an export/import backup flow). IndexedDB is same-origin storage: an XSS on
+  the page could read the seed. That is an acceptable trade for signing game artifacts —
+  stated plainly — and hardening (WebCrypto-wrapped, non-extractable keys) is a later step
+  that would not change the signature format.
 
 ## Security & hardening
 
@@ -80,3 +84,10 @@ input** and validated before use (findings from an initial security review are f
 - **CRDT identity** — switching a memory's writer site recomputes its next sequence, so a
   site adopted through a merge can never mint a colliding association id; pack labels over the
   64 KiB serialization limit are rejected before they can corrupt an image.
+- **Signed world packs are tamper-evident, recursively.** A world pack can carry its author's
+  ed25519 signature over the canonical seed+event content; replay refuses a signed pack whose
+  content no longer matches (`pack signature is invalid`), and because merges embed the
+  foreign pack verbatim, the check re-runs at every nesting level — tampering with a world
+  *quoted inside another world* is caught too. Unsigned packs stay importable and are
+  labeled "unsigned (replay-verifiable only)"; the signature is authoritative, never the
+  displayed fingerprint.

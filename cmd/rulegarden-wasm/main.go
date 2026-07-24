@@ -7,8 +7,11 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"syscall/js"
 
@@ -17,6 +20,36 @@ import (
 )
 
 var world *rulegarden.World
+
+// identity is the player's ed25519 key, loaded by the page from IndexedDB (or freshly
+// generated). While set, receipts and exported world packs are signed automatically —
+// signing is additive: everything stays replay-verifiable exactly as before, the signature
+// just also binds the author. The seed never leaves the page except through the explicit
+// "export key" backup flow.
+var identity ed25519.PrivateKey
+
+// identityInfo is the uniform identity payload: the public half plus its display
+// fingerprint (the trust-list handle; never a substitute for signature verification).
+func identityInfo(priv ed25519.PrivateKey) map[string]any {
+	pub := priv.Public().(ed25519.PublicKey)
+	return map[string]any{
+		"public_key_b64": base64.StdEncoding.EncodeToString(pub),
+		"fingerprint":    engine.KeyFingerprint(pub),
+	}
+}
+
+// packSignatureInfo summarizes a pasted pack's signature state for the UI: unsigned packs
+// are allowed (surfaced as such), invalid ones never reach here — replay refuses them.
+func packSignatureInfo(p rulegarden.Pack) map[string]any {
+	if len(p.Signature) == 0 {
+		return map[string]any{"signed": false}
+	}
+	return map[string]any{
+		"signed":      true,
+		"valid":       p.VerifySignature(),
+		"fingerprint": p.SignerFingerprint(),
+	}
+}
 
 // reply marshals a result or error into the uniform {ok, data|error} envelope.
 func reply(data any, err error) string {
@@ -110,22 +143,73 @@ func main() {
 			}
 			return reply(state(), nil)
 		}),
-		// exportPack() — the shareable seed+log world pack.
+		// generateIdentity() — mint a fresh ed25519 identity and activate it. Returns the
+		// 32-byte seed (base64) for the page to persist; from now on receipts and exported
+		// packs are signed.
+		"generateIdentity": js.FuncOf(func(this js.Value, args []js.Value) any {
+			_, priv, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				return reply(nil, err)
+			}
+			identity = priv
+			info := identityInfo(priv)
+			info["seed_b64"] = base64.StdEncoding.EncodeToString(priv.Seed())
+			return reply(info, nil)
+		}),
+		// loadIdentity(seedB64) — activate a persisted identity (IndexedDB or an imported
+		// key backup).
+		"loadIdentity": js.FuncOf(func(this js.Value, args []js.Value) any {
+			seed, err := base64.StdEncoding.DecodeString(args[0].String())
+			if err != nil {
+				return reply(nil, fmt.Errorf("invalid key backup: %w", err))
+			}
+			if len(seed) != ed25519.SeedSize {
+				return reply(nil, fmt.Errorf("invalid key backup: seed is %d bytes, want %d", len(seed), ed25519.SeedSize))
+			}
+			identity = ed25519.NewKeyFromSeed(seed)
+			return reply(identityInfo(identity), nil)
+		}),
+		// publicKey() — the active identity's public half + fingerprint.
+		"publicKey": js.FuncOf(func(this js.Value, args []js.Value) any {
+			if identity == nil {
+				return reply(nil, fmt.Errorf("no identity loaded"))
+			}
+			return reply(identityInfo(identity), nil)
+		}),
+		// exportPack() — the shareable seed+log world pack, signed when an identity is
+		// active (signing is additive; unsigned export still replays identically).
 		"exportPack": js.FuncOf(func(this js.Value, args []js.Value) any {
-			data, err := world.ExportJSON()
+			p := world.Export()
+			if identity != nil {
+				p.Sign(identity)
+			}
+			data, err := json.Marshal(p)
 			if err != nil {
 				return reply(nil, err)
 			}
 			return reply(json.RawMessage(data), nil)
 		}),
-		// importPack(packJSON) — replay a shared world to a bit-identical state.
+		// importPack(packJSON) — replay a shared world to a bit-identical state. A signed
+		// pack whose signature does not match its content is refused by replay; the reply
+		// surfaces the signature state {signed, valid, fingerprint} for the UI.
 		"importPack": js.FuncOf(func(this js.Value, args []js.Value) any {
-			w, err := rulegarden.ImportJSON([]byte(args[0].String()))
+			raw := []byte(args[0].String())
+			if len(raw) > rulegarden.MaxPackBytes {
+				return reply(nil, fmt.Errorf("pack is %d bytes, exceeding the %d-byte limit", len(raw), rulegarden.MaxPackBytes))
+			}
+			var p rulegarden.Pack
+			if err := json.Unmarshal(raw, &p); err != nil {
+				return reply(nil, fmt.Errorf("invalid pack: %w", err))
+			}
+			w, err := rulegarden.Replay(p)
 			if err != nil {
 				return reply(nil, err)
 			}
 			world = w
-			return reply(state(), nil)
+			return reply(map[string]any{
+				"state":          state(),
+				"pack_signature": packSignatureInfo(p),
+			}, nil)
 		}),
 		// hash() — the determinism fingerprint (two identical hashes = identical worlds).
 		"hash": js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -146,10 +230,15 @@ func main() {
 			if err := world.MergeBrainsFrom(p, id); err != nil {
 				return reply(nil, err)
 			}
-			return reply(state(), nil)
+			return reply(map[string]any{
+				"state":          state(),
+				"pack_signature": packSignatureInfo(p),
+			}, nil)
 		}),
 		// certify(creatureID) — ProofRoute: a replay-verifiable receipt for the creature's
 		// last decision plus its brain image (base64 v3), the pair nvsa-verify consumes.
+		// Signed with the active identity when one is loaded (verify strictly with
+		// nvsa-verify -require-signature); unsigned receipts remain replay-verifiable.
 		"certify": js.FuncOf(func(this js.Value, args []js.Value) any {
 			id, err := strconv.Atoi(args[0].String())
 			if err != nil {
@@ -159,10 +248,16 @@ func main() {
 			if err != nil {
 				return reply(nil, err)
 			}
-			return reply(map[string]any{
+			data := map[string]any{
 				"receipt":   cert,
 				"brain_b64": base64.StdEncoding.EncodeToString(brain),
-			}, nil)
+			}
+			if identity != nil {
+				cert.Sign(identity)
+				data["receipt"] = cert
+				data["signer"] = engine.KeyFingerprint(cert.PublicKey)
+			}
+			return reply(data, nil)
 		}),
 		// version() — engine capacity constant for UI limits.
 		"version": js.FuncOf(func(this js.Value, args []js.Value) any {

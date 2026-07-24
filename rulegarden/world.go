@@ -261,11 +261,16 @@ func (w *World) act(c *Creature, action string, target *Object) {
 // ---- pack (share/replay) ----
 
 // Pack is the shareable form of a world: seed + event log (+ how far it has ticked).
+// PublicKey/Signature optionally bind the pack to its author's ed25519 key over
+// CanonicalBytes (see sign.go); replay refuses a signed pack whose signature no longer
+// matches its content, while unsigned packs replay as before.
 type Pack struct {
-	Version int     `json:"version"`
-	Seed    uint64  `json:"seed"`
-	Ticks   int     `json:"ticks"`
-	Events  []Event `json:"events"`
+	Version   int     `json:"version"`
+	Seed      uint64  `json:"seed"`
+	Ticks     int     `json:"ticks"`
+	Events    []Event `json:"events"`
+	PublicKey []byte  `json:"public_key,omitempty"`
+	Signature []byte  `json:"signature,omitempty"`
 }
 
 // Export captures the world as a replayable pack.
@@ -287,6 +292,12 @@ func Replay(p Pack) (*World, error) {
 func replayDepth(p Pack, depth int) (*World, error) {
 	if p.Version != 1 {
 		return nil, fmt.Errorf("unsupported pack version %d", p.Version)
+	}
+	// Tamper evidence: a signed pack whose content no longer matches its signature is
+	// refused outright. Runs at every nesting level, so a foreign pack embedded in a
+	// merge_brains event is re-verified whenever the quoting world replays.
+	if len(p.Signature) > 0 && !p.VerifySignature() {
+		return nil, fmt.Errorf("pack signature is invalid — content does not match its author's signature")
 	}
 	if depth > MaxMergeDepth {
 		return nil, fmt.Errorf("merge nesting exceeds the limit of %d", MaxMergeDepth)

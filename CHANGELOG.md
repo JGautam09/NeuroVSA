@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Browser signing (trust arc, Phase A)**: RuleGarden decision receipts and exported world
+  packs are now **ed25519-signed in the browser** by a per-player identity — the signature
+  comes from the same stdlib `crypto/ed25519` compiled into the wasm engine, so browser and
+  CLI signatures are bit-identical (pinned by a golden-signature test). Key custody:
+  generated in-engine, seed persisted in IndexedDB, export/import backup flow, fingerprint
+  shown in the UI (honest XSS caveat documented — it is a game identity, not a credential).
+- **Signed world packs, recursively tamper-evident**: a world pack can carry its author's
+  signature over the canonical seed+event content; replay refuses a signed pack whose
+  content no longer matches — at every nesting level, so tampering with a pack *quoted
+  inside another world's merge event* is caught too. Unsigned packs import as before.
+- **`nvsa-verify -world`**: verify a shared world pack from the CLI — author signature,
+  bounded replay, and the resulting world hash (`-require-signature` for strict mode).
+  Proven end-to-end: a browser-signed receipt and world pack verify natively.
+- `engine.KeyFingerprint`: the short display identity (first 8 bytes of SHA-256, hex) used
+  for signer chips and trusted-signer lists; signatures always verify against the full key.
+
+### Changed
+- **Relicensed from MIT to the Apache License 2.0** — adds an explicit patent grant and the
+  §5 inbound-equals-outbound contribution model; `NOTICE` carries the copyright. Repo
+  references (README badge, CONTRIBUTING, PR template) updated.
+
 ## [0.3.0] — 2026-07-24 "NeuroMesh + ProofRoute"
 
 Mergeable memories (the provenance ledger becomes a true CRDT) and verifiable decisions.
