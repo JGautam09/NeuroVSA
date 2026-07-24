@@ -9,24 +9,20 @@ permissions:
   contents: read
 
 jobs:
+  # Job name must stay `test (<os>)` — the branch-protection ruleset requires those exact
+  # contexts. Do not add matrix dimensions to the name (a rename orphans the required check).
   test:
-    name: test (${{ matrix.os }}, go ${{ matrix.go }})
+    name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        go: ['1.26'] # current
-        include:
-          # The minimum version the module claims (go.mod: go 1.22). Building AND testing on
-          # it guards against accidental use of newer stdlib/language features.
-          - os: ubuntu-latest
-            go: '1.22'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go }}
+          go-version: '1.26'
           cache: true
 
       - name: gofmt (must be clean)
@@ -44,6 +40,23 @@ jobs:
 
       - name: test (race)
         run: go test -race ./...
+
+  min-version:
+    # The minimum Go the module claims (go.mod: go 1.22) — build + test, guarding against
+    # accidental use of newer stdlib/language features. Separate job (not part of the `test`
+    # matrix name) so the required-check contexts stay stable.
+    name: test (go 1.22 minimum)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+      - name: build
+        run: go build ./...
+      - name: test
+        run: go test ./...
 
   crosscompile:
     name: cross-compile (mmap build tags)
