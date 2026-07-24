@@ -1,13 +1,15 @@
-// Command nvsa-verify checks NeuroVSA decision certificates and lesson packs.
+// Command nvsa-verify checks NeuroVSA decision certificates, lesson packs, and world packs.
 //
 //	nvsa-verify -cert receipt.json -memory memory.bin   # re-execute a decision receipt
 //	nvsa-verify -pack lessons.json                      # check a pack's signature
 //	nvsa-verify -pack lessons.json -memory memory.bin   # ...and its installation status
+//	nvsa-verify -world world.json                       # verify + replay a shared world pack
 //
 // Certificate verification is the ProofRoute promise made concrete: the verifier reloads
 // the referenced memory, re-derives the candidate vectors from the vocab seed, re-executes
-// the cleanup decision, and demands bit-exact agreement with the receipt. Exit code 0 means
-// every applicable check passed.
+// the cleanup decision, and demands bit-exact agreement with the receipt. World packs are
+// signature-checked and fully replayed (the RuleGarden determinism contract), printing the
+// resulting world hash. Exit code 0 means every applicable check passed.
 package main
 
 import (
@@ -17,6 +19,7 @@ import (
 	"os"
 
 	"github.com/JGautam09/NeuroVSA/engine"
+	"github.com/JGautam09/NeuroVSA/rulegarden"
 )
 
 func fail(format string, args ...any) {
@@ -27,6 +30,7 @@ func fail(format string, args ...any) {
 func main() {
 	certPath := flag.String("cert", "", "decision certificate JSON to verify (requires -memory)")
 	packPath := flag.String("pack", "", "lesson pack JSON to verify")
+	worldPath := flag.String("world", "", "world pack JSON to verify and replay")
 	memPath := flag.String("memory", "", "memory file (v3) the certificate/pack is checked against")
 	requireSig := flag.Bool("require-signature", false, "fail unsigned certificates/packs")
 	flag.Parse()
@@ -39,10 +43,44 @@ func main() {
 		verifyCert(*certPath, *memPath, *requireSig)
 	case *packPath != "":
 		verifyPack(*packPath, *memPath, *requireSig)
+	case *worldPath != "":
+		verifyWorld(*worldPath, *requireSig)
 	default:
 		flag.Usage()
 		os.Exit(2)
 	}
+}
+
+// verifyWorld checks a shared RuleGarden world pack: author signature (when present) and a
+// full bounded replay — the same tamper-evidence path the browser runs on import. Replay
+// itself re-verifies every signature, including packs quoted inside merge_brains events.
+func verifyWorld(worldPath string, requireSig bool) {
+	raw, err := os.ReadFile(worldPath)
+	if err != nil {
+		fail("read world pack: %v", err)
+	}
+	w, err := rulegarden.ImportJSON(raw)
+	if err != nil {
+		fail("world pack rejected: %v", err)
+	}
+
+	var p rulegarden.Pack
+	if err := json.Unmarshal(raw, &p); err != nil {
+		fail("parse world pack: %v", err)
+	}
+	signed := len(p.Signature) > 0
+	fmt.Printf("world pack: %s — seed %d, %d events, %d ticks\n", worldPath, p.Seed, len(p.Events), p.Ticks)
+	fmt.Printf("  signature : %s\n", sigState(signed, p.VerifySignature()))
+	if signed {
+		fmt.Printf("  author    : %s\n", p.SignerFingerprint())
+	}
+	fmt.Printf("  replay    : OK — world hash %s\n", w.Hash())
+
+	if requireSig && !signed {
+		fmt.Println("FAILED: pack is unsigned and -require-signature is set")
+		os.Exit(1)
+	}
+	fmt.Println("VERIFIED: the pack replays deterministically" + map[bool]string{true: " and its author signature is valid.", false: " (unsigned — replay-verifiable only)."}[signed])
 }
 
 func verifyCert(certPath, memPath string, requireSig bool) {

@@ -180,9 +180,11 @@ $('export').onclick = () => {
   log(`exported world: seed + ${pack.events.length} events — that IS the whole world`);
 };
 $('import').onclick = () => {
-  refresh(call('importPack', $('pack').value));
+  const data = call('importPack', $('pack').value);
+  if (!data) return;
+  refresh(data.state);
   selected = null;
-  log('imported pack and replayed it deterministically');
+  log('imported pack and replayed it deterministically — ' + describeSig(data.pack_signature));
 };
 
 // NeuroMesh in costume: merge every creature brain from the pasted world pack into the
@@ -190,10 +192,10 @@ $('import').onclick = () => {
 // this world still replays bit-exactly — and foreign lessons keep their foreign site ids.
 $('mergeBrains').onclick = () => {
   if (!selected) { log('select a creature first — it will absorb the visiting lessons'); return; }
-  const data = refresh_or_null(call('mergeBrains', $('pack').value, selected));
+  const data = call('mergeBrains', $('pack').value, selected);
   if (data) {
-    refresh(data);
-    log(`merged brains from the pasted world into creature #${selected} — foreign lessons keep their site ids (see ledger)`);
+    refresh(data.state);
+    log(`merged brains from the pasted world into creature #${selected} — foreign lessons keep their site ids (see ledger); ` + describeSig(data.pack_signature));
   }
 };
 
@@ -206,12 +208,37 @@ $('receipt').onclick = () => {
   if (!data) return;
   download(`creature${selected}-receipt.json`, JSON.stringify(data.receipt, null, 1), 'application/json');
   download(`creature${selected}-brain.bin`, b64ToBytes(data.brain_b64), 'application/octet-stream');
-  log(`receipt + brain downloaded — verify with: nvsa-verify -cert creature${selected}-receipt.json -memory creature${selected}-brain.bin`);
+  const signedNote = data.signer
+    ? `SIGNED by ${data.signer} — verify strictly with -require-signature`
+    : 'unsigned (replay-verifiable only)';
+  log(`receipt + brain downloaded (${signedNote}) — nvsa-verify -cert creature${selected}-receipt.json -memory creature${selected}-brain.bin`);
 };
 
 $('hash').onclick = () => log('world hash: ' + call('hash'));
 
-function refresh_or_null(data) { return data; }
+// ---- identity (signing key) ----
+function describeSig(sig) {
+  if (!sig || !sig.signed) return 'pack was unsigned (replay-verifiable only)';
+  return sig.valid ? `pack SIGNED by ${sig.fingerprint}` : 'pack signature INVALID';
+}
+
+$('exportKey').onclick = async () => {
+  const backup = await exportIdentityBackup();
+  if (!backup) { log('no identity to export'); return; }
+  download('rulegarden-key.json', backup, 'application/json');
+  log('key backup downloaded — anyone holding it can sign as you; store it privately');
+};
+
+$('importKey').onclick = () => $('keyFile').click();
+$('keyFile').onchange = async () => {
+  const f = $('keyFile').files[0];
+  if (!f) return;
+  const info = await importIdentityBackup(await f.text(), call);
+  $('keyFile').value = '';
+  if (!info) { log('✗ not a valid key backup'); return; }
+  $('fp').textContent = info.fingerprint;
+  log(`identity imported — now signing as ${info.fingerprint}`);
+};
 
 function b64ToBytes(b64) {
   const bin = atob(b64);
@@ -241,5 +268,16 @@ function download(name, content, mime) {
     $(id).innerHTML = KINDS.map((k) => `<option>${k}</option>`).join('');
   }
   refresh(call('newWorld', $('seed').value));
+
+  // Identity boot: receipts and exported worlds are signed from here on. Unavailable key
+  // storage (e.g. private browsing) degrades honestly to the old unsigned behavior.
+  const id = await initIdentity(call);
+  if (id) {
+    $('fp').textContent = id.fingerprint;
+    log(`signing identity ready: ${id.fingerprint} (key lives in this browser — see Export key)`);
+  } else {
+    $('fp').textContent = 'unsigned';
+    log('no key storage available — receipts and exports stay unsigned (replay-verifiable only)');
+  }
   log('RuleGarden ready. Place a creature and a predator, then teach.');
 })();

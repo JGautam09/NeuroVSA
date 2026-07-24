@@ -91,10 +91,22 @@
       <button id="hash">World hash</button>
     </div>
     <textarea id="pack" placeholder="world pack JSON (seed + event log)"></textarea>
+    <div style="margin-top:6px">
+      <span class="muted">signing as</span> <b id="fp">…</b>
+      <button id="exportKey" title="download the signing key's seed as a backup — keep it private">Export key</button>
+      <button id="importKey" title="restore a key backup; future receipts and exports sign as that identity">Import key</button>
+      <input type="file" id="keyFile" accept="application/json" style="display:none">
+    </div>
+    <div class="muted" style="font-size:11px; margin-top:2px">
+      Receipts &amp; exported worlds are ed25519-signed by this identity. The key lives in this
+      browser's IndexedDB (same-origin storage — an XSS could read it), so treat it as a game
+      identity, not a valuable credential.
+    </div>
   </div>
 </div>
 
 <script src="wasm_exec.js"></script>
+<script src="keys.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
