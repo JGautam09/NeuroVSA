@@ -26,7 +26,7 @@ func certFixture(t *testing.T) (*AssociativeMemory, core.Hypervector, []string) 
 func TestCertificateIssueVerifyRoundTrip(t *testing.T) {
 	mem, state, tools := certFixture(t)
 
-	cert, err := IssueDecision(mem, state, tools)
+	cert, err := IssueDecision(mem, state, tools, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestCertificateIssueVerifyRoundTrip(t *testing.T) {
 
 func TestCertificateSignatureAndTamper(t *testing.T) {
 	mem, state, tools := certFixture(t)
-	cert, err := IssueDecision(mem, state, tools)
+	cert, err := IssueDecision(mem, state, tools, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestCertificateSignatureAndTamper(t *testing.T) {
 // A certificate must fail cleanly against a memory whose state has moved on.
 func TestCertificateDetectsMemoryDrift(t *testing.T) {
 	mem, state, tools := certFixture(t)
-	cert, err := IssueDecision(mem, state, tools)
+	cert, err := IssueDecision(mem, state, tools, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

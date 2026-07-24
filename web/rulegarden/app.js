@@ -21,6 +21,21 @@ function log(msg) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+// el builds a DOM element with text set via textContent — NEVER innerHTML. Every value that
+// can originate in an imported or peer-delivered pack (lesson labels, contributor labels,
+// ids) flows through here, so an HTML/SVG/event-handler payload in a label renders as inert
+// text and can never execute. This is the structural defense behind the P0 XSS fix (a
+// stored-XSS label could otherwise read the ed25519 signing seed from same-origin IndexedDB).
+function el(tag, opts = {}, children = []) {
+  const n = document.createElement(tag);
+  if (opts.text != null) n.textContent = opts.text; // textContent, not innerHTML
+  if (opts.className) n.className = opts.className;
+  for (const [k, v] of Object.entries(opts.attrs || {})) n.setAttribute(k, v);
+  for (const c of children) n.appendChild(c);
+  return n;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
 // ---- engine calls (uniform {ok, data|error} envelope) ----
 function call(fn, ...args) {
   const raw = window.RuleGarden[fn](...args.map(String));
@@ -82,35 +97,66 @@ function renderInspector() {
 
   $('selId').textContent = '#' + cr.id;
 
+  // Decision panel — built entirely from DOM nodes; percept/action are engine enums but
+  // contributor labels are untrusted, so everything goes through el()/textContent.
+  const dec = $('decision');
+  clear(dec);
   const d = cr.decision;
   if (d) {
-    const cand = d.candidates.map((c) => `<tr><td>${c.token}</td><td>${c.distance}</td></tr>`).join('');
-    const contrib = (d.contributors || [])
-      .map((c) => `<span class="muted">↳ memory:</span> ${c.label || '#' + c.id}`).join('<br>');
     const p = d.percept.sees === 'nothing' ? 'nothing' : `${d.percept.sees}, ${d.percept.dist}, ${d.percept.dir}`;
-    $('decision').innerHTML =
-      `sees <b>${p}</b> → <b>${d.action}</b> (${basisSpan(d.basis)}, margin ${d.margin})` +
-      `<table><tr><th>action</th><th>distance</th></tr>${cand}</table>` + contrib;
+    dec.appendChild(document.createTextNode('sees '));
+    dec.appendChild(el('b', { text: p }));
+    dec.appendChild(document.createTextNode(' → '));
+    dec.appendChild(el('b', { text: d.action }));
+    dec.appendChild(document.createTextNode(' ('));
+    dec.appendChild(el('span', { text: d.basis, className: 'basis-' + d.basis }));
+    dec.appendChild(document.createTextNode(`, margin ${d.margin})`));
+
+    const table = el('table', {}, [
+      el('tr', {}, [el('th', { text: 'action' }), el('th', { text: 'distance' })]),
+      ...d.candidates.map((c) => el('tr', {}, [el('td', { text: c.token }), el('td', { text: String(c.distance) })])),
+    ]);
+    dec.appendChild(table);
+
+    for (const c of d.contributors || []) {
+      dec.appendChild(el('div', {}, [
+        el('span', { text: '↳ memory: ', className: 'muted' }),
+        // c.label is untrusted pack content — textContent, never markup.
+        el('span', { text: c.label || '#' + c.id }),
+      ]));
+    }
   } else {
-    $('decision').innerHTML = '<span class="muted">no decision yet — tick the world</span>';
+    dec.appendChild(el('span', { text: 'no decision yet — tick the world', className: 'muted' }));
   }
 
-  // lessons ledger
-  const rows = (cr.lessons || []).map((l) =>
-    `<tr class="lesson-row"><td>${l.id}</td><td class="${l.removed ? 'removed' : ''}">${l.label}</td>` +
-    `<td>${l.removed ? '' : `<button data-forget="${l.id}">forget</button>`}</td></tr>`).join('');
-  $('lessons').innerHTML = `<tr><th>id</th><th>lesson</th><th></th></tr>` + rows;
-  for (const btn of $('lessons').querySelectorAll('button[data-forget]')) {
-    btn.onclick = () => {
-      refresh(call('apply', JSON.stringify({ op: 'forget', creature: selected, lesson: btn.dataset.forget })));
-      log(`forgot lesson ${btn.dataset.forget} — memory is now bit-identical to never having learned it`);
-      syncBroadcastRevoke(btn.dataset.forget); // live peers tombstone it too
-    };
+  // Lessons ledger — DOM rows; l.label is untrusted, set via textContent.
+  const lessons = $('lessons');
+  clear(lessons);
+  lessons.appendChild(el('tr', {}, [el('th', { text: 'id' }), el('th', { text: 'lesson' }), el('th')]));
+  for (const l of cr.lessons || []) {
+    const actionCell = el('td');
+    if (!l.removed) {
+      const btn = el('button', { text: 'forget' });
+      btn.onclick = () => {
+        refresh(call('apply', JSON.stringify({ op: 'forget', creature: selected, lesson: l.id })));
+        log(`forgot lesson ${l.id} — memory is now bit-identical to never having learned it`);
+        syncBroadcastRevoke(l.id); // live peers tombstone it too
+      };
+      actionCell.appendChild(btn);
+    }
+    lessons.appendChild(el('tr', { className: 'lesson-row' }, [
+      el('td', { text: l.id }),
+      el('td', { text: l.label, className: l.removed ? 'removed' : '' }),
+      actionCell,
+    ]));
   }
 
-  // transfer selects
-  const active = (cr.lessons || []).filter((l) => !l.removed);
-  $('xLesson').innerHTML = active.map((l) => `<option value="${l.id}">#${l.id} ${l.label.slice(0, 40)}</option>`).join('');
+  // Transfer select — option text via textContent (label is untrusted).
+  const xLesson = $('xLesson');
+  clear(xLesson);
+  for (const l of (cr.lessons || []).filter((x) => !x.removed)) {
+    xLesson.appendChild(el('option', { text: `#${l.id} ${l.label.slice(0, 40)}`, attrs: { value: l.id } }));
+  }
 }
 
 // ---- controls ----
@@ -229,7 +275,7 @@ $('regLoad').onclick = async () => {
   listEl.textContent = 'loading…';
   try {
     const manifest = await fetchRegistry(url);
-    listEl.innerHTML = '';
+    clear(listEl);
     if (!manifest.packs.length) { listEl.textContent = 'registry is empty'; return; }
     for (const entry of manifest.packs) {
       const row = document.createElement('div');
@@ -377,7 +423,9 @@ function download(name, content, mime) {
   go.run(instance); // resolves RuleGarden global, keeps runtime alive
 
   for (const id of ['tSees', 'xSees']) {
-    $(id).innerHTML = KINDS.map((k) => `<option>${k}</option>`).join('');
+    const sel = $(id);
+    clear(sel);
+    for (const k of KINDS) sel.appendChild(el('option', { text: k })); // KINDS is a constant, but keep it DOM-only
   }
   refresh(call('newWorld', $('seed').value));
 

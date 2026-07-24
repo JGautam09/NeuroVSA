@@ -179,21 +179,78 @@ func (indexer *CodeASTIndexer) encodeFuncV2(fn *ast.FuncDecl) core.Hypervector {
 	}
 
 	if fn.Body != nil {
-		streamPos := 1
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			if streamPos > MaxStmtStream {
-				return false
-			}
-			kind := stmtKind(n)
-			if kind == "" {
-				return true
-			}
-			components = append(components, indexer.Dict.GetOrRegister("stmt:"+kind).Permute(100+streamPos))
-			streamPos++
-			return true
-		})
+		// A hard node budget that TERMINATES traversal — not ast.Inspect, whose `return false`
+		// only prunes a node's children and keeps walking later siblings, so a huge flat
+		// function would still be visited end to end. streamStmtKinds stops the moment the
+		// budget is spent, making encoding genuinely bounded per function.
+		stream := streamStmtKinds(fn.Body, MaxStmtStream)
+		for i, kind := range stream {
+			components = append(components, indexer.Dict.GetOrRegister("stmt:"+kind).Permute(100+(i+1)))
+		}
 	}
 	return core.Bundle(components)
+}
+
+// streamStmtKinds walks a function body in source order and returns up to `limit` statement
+// KIND tokens, terminating traversal completely once the limit is reached (a global budget,
+// not per-subtree pruning). It descends only into the block-bearing statements that define
+// control-flow shape — bodies of if/for/range/switch/select and nested blocks — which is
+// enough to characterize structure without an unbounded full-tree walk. O(min(nodes, limit)).
+func streamStmtKinds(body *ast.BlockStmt, limit int) []string {
+	out := make([]string, 0, limit)
+	var walk func(stmts []ast.Stmt)
+	walk = func(stmts []ast.Stmt) {
+		for _, s := range stmts {
+			if len(out) >= limit {
+				return
+			}
+			if kind := stmtKind(s); kind != "" {
+				out = append(out, kind)
+			}
+			if len(out) >= limit {
+				return
+			}
+			switch n := s.(type) {
+			case *ast.BlockStmt:
+				walk(n.List)
+			case *ast.IfStmt:
+				if n.Body != nil {
+					walk(n.Body.List)
+				}
+				if n.Else != nil {
+					walk([]ast.Stmt{n.Else})
+				}
+			case *ast.ForStmt:
+				if n.Body != nil {
+					walk(n.Body.List)
+				}
+			case *ast.RangeStmt:
+				if n.Body != nil {
+					walk(n.Body.List)
+				}
+			case *ast.SwitchStmt:
+				if n.Body != nil {
+					walk(n.Body.List)
+				}
+			case *ast.TypeSwitchStmt:
+				if n.Body != nil {
+					walk(n.Body.List)
+				}
+			case *ast.SelectStmt:
+				if n.Body != nil {
+					walk(n.Body.List)
+				}
+			case *ast.CaseClause:
+				walk(n.Body)
+			case *ast.CommClause:
+				walk(n.Body)
+			case *ast.LabeledStmt:
+				walk([]ast.Stmt{n.Stmt})
+			}
+		}
+	}
+	walk(body.List)
+	return out
 }
 
 // stmtKind maps an AST node to its control-flow token ("" for nodes that are not

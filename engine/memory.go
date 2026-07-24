@@ -93,6 +93,12 @@ type AssociationRecord struct {
 type Contributor struct {
 	ID    AssociationID `json:"id"`
 	Label string        `json:"label,omitempty"`
+	// Distance is the Hamming distance from the probe to this association's bound vector.
+	// 0 = an exact match (the association literally produced the decision); >0 = an
+	// analogical neighbor found within the requested radius. Certificates carry it so a
+	// verifier can rederive whether a decision was a lesson (exact) or a generalization
+	// (nearest sources named, with their distances).
+	Distance int `json:"distance"`
 }
 
 // ledgerEntry is the provenance record for one stored association.
@@ -257,8 +263,8 @@ func (am *AssociativeMemory) Contributors(probe core.Hypervector, maxDist int) [
 		if e.removed {
 			continue
 		}
-		if core.HammingDistance(e.bound, probe) <= maxDist {
-			out = append(out, Contributor{ID: e.id, Label: e.label})
+		if d := core.HammingDistance(e.bound, probe); d <= maxDist {
+			out = append(out, Contributor{ID: e.id, Label: e.label, Distance: d})
 		}
 	}
 	return out
@@ -454,6 +460,12 @@ func (am *AssociativeMemory) loadFromImageLocked(data []byte) error {
 			bound.Vector[i] = binary.LittleEndian.Uint64(data[off+i*8:])
 		}
 		off += matrixBytes
+		// Reject a non-canonical ledger vector before it reaches addBits (below), where an
+		// excess bit would index the counter array out of range — a malformed or hostile
+		// memory image must error, never panic. See core.ValidateCanonical.
+		if err := bound.ValidateCanonical(); err != nil {
+			return fmt.Errorf("corrupt ledger entry %d: %w", n+1, err)
+		}
 		if _, dup := index[id]; dup {
 			return fmt.Errorf("corrupt ledger: duplicate id %s", id)
 		}

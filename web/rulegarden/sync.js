@@ -19,11 +19,25 @@ const liveSync = {
   pc: null, dc: null,
   peerFp: null, peerPub: null,
   creature: null, // the local creature that learns from (and teaches) the peer
+  // Mutual-approval handshake state. NO brain data (snapshot, teach, forget) is sent OR
+  // applied until BOTH sides reach `ready`. This closes the window where anyone who guessed
+  // a room code received the brain snapshot before the legitimate user could reject them.
+  localApproved: false, // we approved the peer's identity
+  peerApproved: false,  // the peer sent us an accept
+  ready: false,         // both approved → data may flow
   onLog: (m) => console.log('[sync]', m),
   onState: () => {}, // set by app.js: status chip
   onApply: null, // set by app.js: refresh UI after remote apply
   callEngine: null, // set by app.js: the {ok,data|error} bridge caller
 };
+
+function syncResetHandshake() {
+  liveSync.peerFp = null;
+  liveSync.peerPub = null;
+  liveSync.localApproved = false;
+  liveSync.peerApproved = false;
+  liveSync.ready = false;
+}
 
 const SYNC_RTC = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
 
@@ -71,9 +85,10 @@ function syncWireChannel() {
     liveSync.onLog('peer channel open — introducing ourselves');
     const me = liveSync.callEngine('publicKey');
     liveSync.dc.send(JSON.stringify({ t: 'hello', fp: me ? me.fingerprint : 'unsigned', pub: me ? me.public_key_b64 : '' }));
-    syncBroadcastBrain(); // on-connect snapshot
+    // NOTHING else is sent yet. The brain snapshot goes out only after mutual approval
+    // (syncMaybeReady), so an unapproved peer never receives it.
   };
-  liveSync.dc.onclose = () => { liveSync.onLog('peer disconnected'); liveSync.onState('offline'); liveSync.peerFp = null; liveSync.peerPub = null; };
+  liveSync.dc.onclose = () => { liveSync.onLog('peer disconnected'); liveSync.onState('offline'); syncResetHandshake(); };
   liveSync.dc.onmessage = (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch (e) { liveSync.onLog('✗ undecodable peer message dropped'); return; }
@@ -81,28 +96,63 @@ function syncWireChannel() {
   };
 }
 
+// syncMaybeReady: once BOTH sides have approved, transition to ready and send our initial
+// brain snapshot — never before. Idempotent.
+function syncMaybeReady() {
+  if (liveSync.ready || !liveSync.localApproved || !liveSync.peerApproved) return;
+  liveSync.ready = true;
+  liveSync.onLog(`synced with peer ${liveSync.peerFp} — brains now exchange`);
+  liveSync.onState(`live with ${liveSync.peerFp}`);
+  syncBroadcastBrain(); // the first snapshot leaves only after mutual approval
+}
+
 function syncHandle(msg) {
   if (msg.t === 'hello') {
-    // The one identity decision per connection. Manual signaling already authenticated the
-    // channel out-of-band; this pins which KEY the channel speaks for.
-    if (!confirm(`Peer connected.\n\n  signing identity: ${msg.fp}\n\nSync brains with this peer? (their lessons flow into your selected creature, yours into theirs)`)) {
+    // Record the peer's advertised identity, then ask the LOCAL user to approve before any
+    // data flows. Approving sends an `accept`; both sides must accept to become ready.
+    liveSync.peerFp = msg.fp;
+    liveSync.peerPub = msg.pub || null;
+    if (!confirm(`Peer connected.\n\n  signing identity: ${msg.fp}\n\nSync brains with this peer? Their lessons will flow into your selected creature, and yours into theirs — only after you both agree.`)) {
+      liveSync.dc.send(JSON.stringify({ t: 'decline' }));
+      liveSync.onLog('declined the peer; disconnecting');
       liveSync.dc.close();
       return;
     }
-    liveSync.peerFp = msg.fp;
-    liveSync.peerPub = msg.pub || null;
-    liveSync.onLog(`synced with peer ${msg.fp}`);
-    liveSync.onState(`live with ${msg.fp}`);
+    liveSync.localApproved = true;
+    liveSync.dc.send(JSON.stringify({ t: 'accept' }));
+    liveSync.onState(`awaiting ${msg.fp}…`);
+    syncMaybeReady();
     return;
   }
-  if (liveSync.peerFp === null) throw new Error('peer message before hello — dropped');
+  if (msg.t === 'accept') {
+    if (liveSync.peerFp === null) throw new Error('accept before hello — dropped');
+    liveSync.peerApproved = true;
+    syncMaybeReady();
+    return;
+  }
+  if (msg.t === 'decline') {
+    liveSync.onLog('peer declined the connection');
+    liveSync.dc.close();
+    return;
+  }
+
+  // Everything below is brain data. It is refused until the handshake completes.
+  if (!liveSync.ready) throw new Error(`peer sent ${msg.t} before both sides approved — dropped`);
 
   const gate = (packJSON) => {
     const info = liveSync.callEngine('inspectLessonPack', packJSON);
     if (!info) throw new Error('uninspectable pack dropped');
-    if (info.signed && info.valid === false) throw new Error('pack signature INVALID — dropped');
-    if (info.signed && liveSync.peerPub && info.public_key_b64 !== liveSync.peerPub) {
-      throw new Error(`pack signed by ${info.fingerprint}, not the connected peer ${liveSync.peerFp} — dropped`);
+    // Once a peer advertised a public key at hello, EVERY pack from this connection must be
+    // signed by exactly that key — unsigned or mismatched packs are refused. (A peer with no
+    // identity advertised 'unsigned' at hello; the user approved that explicitly.)
+    if (liveSync.peerPub) {
+      if (!info.signed) throw new Error(`peer advertised a key but sent an UNSIGNED pack — dropped`);
+      if (info.valid === false) throw new Error('pack signature INVALID — dropped');
+      if (info.public_key_b64 !== liveSync.peerPub) {
+        throw new Error(`pack signed by ${info.fingerprint}, not the connected peer ${liveSync.peerFp} — dropped`);
+      }
+    } else if (info.signed && info.valid === false) {
+      throw new Error('pack signature INVALID — dropped');
     }
     return info;
   };
@@ -172,15 +222,16 @@ function syncAutoConnect(signalURL, roomCode, creatureID) {
 }
 
 // Broadcast the local creature's brain after a LOCAL mutation (never after a remote apply —
-// that asymmetry is what prevents echo loops; merges are idempotent anyway).
+// that asymmetry is what prevents echo loops; merges are idempotent anyway). Gated on
+// `ready`: no brain data leaves until both sides approved the handshake.
 function syncBroadcastBrain() {
-  if (!syncConnected() || liveSync.creature == null) return;
+  if (!syncConnected() || !liveSync.ready || liveSync.creature == null) return;
   const data = liveSync.callEngine('brainPacks', liveSync.creature);
   if (data) liveSync.dc.send(JSON.stringify({ t: 'packs', packs: data.packs || [] }));
 }
 
 function syncBroadcastRevoke(lessonID) {
-  if (!syncConnected() || liveSync.creature == null) return;
+  if (!syncConnected() || !liveSync.ready || liveSync.creature == null) return;
   const data = liveSync.callEngine('revocationPack', liveSync.creature, lessonID);
   if (data) liveSync.dc.send(JSON.stringify({ t: 'revoke', pack: data.pack }));
 }

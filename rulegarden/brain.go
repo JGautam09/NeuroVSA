@@ -160,9 +160,21 @@ func (b *Brain) Decide(p PerceptSpec) Decision {
 	if exact := b.mem.Contributors(probe, 0); len(exact) > 0 {
 		d.Basis = "lesson"
 		d.Contributors = exact
-	} else {
+	} else if gen := b.mem.Contributors(probe, GeneralizationRadius); len(gen) > 0 {
+		// A genuine analogical generalization NAMES its nearest source lessons. Real 2-of-3
+		// role-sharing percepts land ~2500 bits, well inside the radius, so a real
+		// generalization always finds a contributor here.
 		d.Basis = "generalization"
-		d.Contributors = b.mem.Contributors(probe, GeneralizationRadius)
+		d.Contributors = gen
+	} else {
+		// Decisive margin but NO identifiable source within the generalization radius: this
+		// is superposition interference, not generalization. Labeling it "generalization"
+		// would break the glass-box promise that every generalized decision names its
+		// source — so we treat an unexplained winner as instinct and do not act on it
+		// confidently.
+		d.Action = ActWander
+		d.Basis = "instinct"
+		d.Contributors = nil
 	}
 	return d
 }

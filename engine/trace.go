@@ -127,7 +127,9 @@ func (tt *TrajectoryTracker) SelectNextToolCertified() (string, PredictionTrace,
 	tool, trace := tt.selectTracedLocked()
 	tt.mu.Unlock()
 
-	cert, err := IssueDecision(tt.router.policy, state, tt.router.tools)
+	// Router certificates use exact-only contributors (radius 0): tool routing has no
+	// analogical-generalization basis, so a decision is lesson or instinct, never dressed up.
+	cert, err := IssueDecision(tt.router.policy, state, tt.router.tools, 0)
 	if err != nil {
 		return tool, trace, DecisionCertificate{}, err
 	}

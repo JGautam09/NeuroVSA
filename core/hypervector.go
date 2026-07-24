@@ -21,6 +21,22 @@ type Hypervector struct {
 	Vector [NumWords]uint64
 }
 
+// ValidateCanonical reports an error if hv is not a canonical Dimension-bit vector — that
+// is, if any bit above position Dimension-1 (the unused high 48 bits of the final word) is
+// set. Every vector arriving from an untrusted, external encoding (hex, JSON, binary image,
+// network) MUST pass this before use: a set excess bit indexes the per-bit vote-counter
+// array (`[Dimension]uint32`) out of range in the associative memory, panicking the
+// process (in wasm, the whole engine). We REJECT rather than silently mask, because masking
+// would alter bytes an ed25519 signature covers — producing verify/no-verify inconsistency
+// between a pack's declared and effective content.
+func (hv Hypervector) ValidateCanonical() error {
+	if hv.Vector[NumWords-1]&^LastWordMask != 0 {
+		return fmt.Errorf("non-canonical hypervector: %d excess bit(s) set in the final word (only bits 0-15 are valid)",
+			bits.OnesCount64(hv.Vector[NumWords-1]&^LastWordMask))
+	}
+	return nil
+}
+
 // GenerateRandom creates a hypervector with uniformly distributed random bits.
 // Excess bits in word 156 (bits 16-63) are strictly masked to zero.
 func GenerateRandom() Hypervector {

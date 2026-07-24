@@ -4,6 +4,61 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Security & correctness hardening from an external review (2×P0, 5×P1, 2×P2 — all verified
+against the code, the two P0s and the deadlock reproduced before fixing). Full verification
+record in [`docs/security/REVIEW-2026-07.md`](docs/security/REVIEW-2026-07.md).
+
+### Security
+- **P0 — stored XSS could exfiltrate the browser signing key.** Untrusted pack labels
+  (lesson/contributor) were interpolated into `innerHTML`; a `<img onerror>` payload could
+  execute and read the ed25519 seed from IndexedDB. Fixed: all rendering rebuilt with DOM
+  `createElement` + `textContent` (an `el()` helper), **zero** `innerHTML` in the UI, plus a
+  strict **Content-Security-Policy** (`script-src 'self' 'wasm-unsafe-eval'`). Proven inert
+  in-browser against HTML/quote/SVG/event-handler payloads; a dependency-free CI check
+  (`web/rulegarden/security.test.mjs`) keeps the invariant from regressing.
+- **P0 — a non-canonical hypervector crashed the engine.** External hex/binary decoders
+  accepted the final word's unused high 48 bits; one set bit indexed the `[10000]uint32`
+  vote-counter array out of range, panicking Go/wasm (reproduced from a pack JSON). Fixed:
+  `core.Hypervector.ValidateCanonical` **rejects** (never masks — masking would alter signed
+  bytes) at every untrusted boundary — hex decode, pack materialization, memory-image loader,
+  certificate state. Fuzz tests for the pack and memory-image parsers.
+- **P1 — live sync sent the brain before identity approval.** The snapshot broadcast on
+  channel-open, before the trust prompt. Replaced with a **mutual-approval handshake**
+  (hello → local approval → `accept` → both-ready); no snapshot or mutation is sent or
+  applied until both sides approve, and once a peer advertises a key every pack from that
+  connection must be signed by it (unsigned/mismatched refused). Verified in-browser.
+
+### Fixed
+- **P1 — opposite-direction concurrent `Merge` could deadlock** (`A.Merge(B)` ∥ `B.Merge(A)`
+  each held its source read-lock while waiting for the other's write-lock). `Merge` now
+  snapshots the source ledger under a single read lock, releases it, then takes only the
+  destination lock — no two-lock hold. Regression test: 200× opposite-direction merges +
+  fan-in under `-race`.
+- **P1 — `World.Hash()` omitted future-relevant state** (bound vectors, vocab seed, writer
+  site/seq), so two worlds could hash equal yet diverge on a later forget/merge. Now hashes a
+  complete `engine.AssociativeMemory.LocalStateFingerprint` per creature.
+- **P1 — "generalization" could be reported with no identifiable source.** A decisive-margin
+  winner with no exact or near contributor was labeled generalization; it is now `instinct`
+  (both in `Brain.Decide` and the certificate's `DerivePolicyOutcome`). Contributors carry
+  their Hamming `Distance`, and certificates record the `GeneralizationRadius`, so a verifier
+  **re-derives** a generalization from its named sources.
+- **P2 — remaining JS-unsafe `uint64` values** (`PackEntry.Seq`, RuleGarden world `Seed`,
+  certificate `VocabSeed`, state-response seed) now use one shared quoted-string wire type
+  (`core.QuotedU64`); a test drives an actual JSON number→`float64`→JSON cycle to prove it.
+- **P2 — `MaxStmtStream` did not bound AST traversal** (`ast.Inspect`'s `return false` prunes
+  children only, not siblings). Replaced with a manual visitor carrying a hard global node
+  budget that terminates traversal; a pathological 5,000-statement function now encodes in
+  bounded work.
+
+### Changed
+- `engine.Version` is `0.8.1` (was a stale `0.3.0-dev` baked into every signed certificate).
+  Existing receipts still verify — each carries its own recorded version.
+- CI adds a **Go 1.22 minimum-version** job (the version go.mod claims) and a **web UI build +
+  security-check** job (React build + the XSS invariant test). Lesson labels remain
+  human-readable; RuleGarden lesson provenance is a follow-up (see the review record).
+
 ## [0.8.0] — 2026-07-24 "Pair by Room Code"
 
 ### Added

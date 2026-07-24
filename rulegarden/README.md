@@ -62,10 +62,13 @@ traversal. **Optionally**, a room code auto-connects instead: the NeuroVSA api s
 `/signal` relay ferries the *same* blobs the manual flow pastes — and nothing else. A
 signaling server necessarily sees connection metadata (SDP carries addresses), but never
 world data, and the relay is dropped the moment the peer channel opens. Manual paste
-remains the serverless default. Once connected, the selected creatures sync **creature-to-creature**: teaches and
-transfers flow as flat, signed lesson packs; **forgets propagate as revocations** — all
-applied through logged `apply_pack`/`revoke_pack` world events, so a live-synced world still
-replays bit-exactly. Convergence is the NeuroMesh CRDT doing its job: re-sent packs are
+remains the serverless default. Connecting runs a **mutual-approval handshake**: both players confirm each other's signing
+fingerprint before any brain data is sent — nothing leaves your tab until you both agree, and
+once a peer advertises a key every lesson it sends must be signed by it. Once connected, the
+selected creatures sync **creature-to-creature**: teaches and transfers flow as flat, signed
+lesson packs whose bound vector is checked against the label it claims (a forged label/vector
+pair is refused); **forgets propagate as revocations** — all applied through logged
+`apply_pack`/`revoke_pack` world events, so a live-synced world still replays bit-exactly. Convergence is the NeuroMesh CRDT doing its job: re-sent packs are
 no-op merges, order between mutations doesn't matter, and every lesson keeps its **author's
 site id** even when relayed.
 

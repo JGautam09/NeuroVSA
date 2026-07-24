@@ -10,17 +10,23 @@ permissions:
 
 jobs:
   test:
-    name: test (${{ matrix.os }})
+    name: test (${{ matrix.os }}, go ${{ matrix.go }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        go: ['1.26'] # current
+        include:
+          # The minimum version the module claims (go.mod: go 1.22). Building AND testing on
+          # it guards against accidental use of newer stdlib/language features.
+          - os: ubuntu-latest
+            go: '1.22'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: ${{ matrix.go }}
           cache: true
 
       - name: gofmt (must be clean)
@@ -58,3 +64,23 @@ jobs:
 
       - name: build for the browser (js/wasm)
         run: GOOS=js GOARCH=wasm go build ./...
+
+  webui:
+    name: web ui build + security checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: install + build the React UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+      - name: RuleGarden web security checks (node, no browser)
+        # Guards P0-1: no untrusted string may reach innerHTML in the RuleGarden page, and the
+        # DOM renderer must reject an event-handler payload. See web/rulegarden/security.test.mjs.
+        run: node web/rulegarden/security.test.mjs

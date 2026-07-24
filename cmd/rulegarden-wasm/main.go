@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"syscall/js"
 
+	"github.com/JGautam09/NeuroVSA/core"
 	"github.com/JGautam09/NeuroVSA/engine"
 	"github.com/JGautam09/NeuroVSA/rulegarden"
 )
@@ -81,13 +82,13 @@ func state() any {
 		Lessons  []lessonView         `json:"lessons"`
 	}
 	type view struct {
-		Seed      uint64               `json:"seed"`
+		Seed      core.QuotedU64       `json:"seed"`
 		Tick      int                  `json:"tick"`
 		GridSize  int                  `json:"grid_size"`
 		Objects   []*rulegarden.Object `json:"objects"`
 		Creatures []creatureView       `json:"creatures"`
 	}
-	v := view{Seed: world.Seed, Tick: world.Tick, GridSize: rulegarden.GridSize, Objects: world.Objects}
+	v := view{Seed: core.QuotedU64(world.Seed), Tick: world.Tick, GridSize: rulegarden.GridSize, Objects: world.Objects}
 	for _, c := range world.Creatures {
 		cv := creatureView{ID: c.ID, X: c.X, Y: c.Y, Decision: c.LastDecision}
 		for _, rec := range c.Brain.Lessons() {
@@ -189,7 +190,7 @@ func main() {
 				return reply(nil, fmt.Errorf("invalid pack: %w", err))
 			}
 			info := packSignatureInfo(p)
-			info["seed"] = strconv.FormatUint(p.Seed, 10)
+			info["seed"] = strconv.FormatUint(uint64(p.Seed), 10)
 			info["ticks"] = p.Ticks
 			info["events"] = len(p.Events)
 			if len(p.PublicKey) > 0 {
