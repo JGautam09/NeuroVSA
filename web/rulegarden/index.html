@@ -102,11 +102,18 @@
       browser's IndexedDB (same-origin storage — an XSS could read it), so treat it as a game
       identity, not a valuable credential.
     </div>
+    <h2 style="margin-top:10px">Pack registry <span class="muted" style="font-weight:normal">(opt-in fetch)</span></h2>
+    <div>
+      <input id="regUrl" style="width:66%" value="https://raw.githubusercontent.com/JGautam09/NeuroVSA/main/registry/index.json">
+      <button id="regLoad" title="fetch the manifest from this URL — the page makes no network calls until you press this">Load</button>
+    </div>
+    <div id="regList" class="muted" style="margin-top:4px">Not loaded. The signature inside each pack is what gets verified — the manifest is only a catalog.</div>
   </div>
 </div>
 
 <script src="wasm_exec.js"></script>
 <script src="keys.js"></script>
+<script src="registry.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

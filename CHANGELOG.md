@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Public pack registry (trust arc, Phase B)** — a **static, GitHub-native registry** of
+  signed packs: `registry/index.json` manifest + `registry/packs/*`; hosting is any static
+  file server and **publishing is a pull request** (no backend, no accounts). The trust
+  model is explicit: the ed25519 signature embedded in each pack is authoritative; the
+  manifest's sha256/author fields only catch tampering early — and `nvsa-pack verify` +
+  a standing CI test lint every committed entry (hash, size, replay, signature, and
+  manifest-author ↔ embedded-key agreement).
+- **`cmd/nvsa-pack`** — `keygen` / `sign` / `publish` / `verify` (stdlib only). Key files
+  reuse the browser's key-backup format, so a browser identity can publish from the CLI;
+  world packs are fully replayed before signing — never sign what doesn't validate.
+- **Browser "Pack registry" panel** — opt-in (nothing is fetched until *Load*): lists packs
+  with signer fingerprints; import/merge is gated by manifest-sha256 check → engine
+  signature verification → an SSH-known-hosts-style **trusted-signers** prompt on first
+  contact with a signer (remembered locally). New `inspectPack` bridge call surfaces
+  signature state without mutating the world.
+- **Reference registry content** — two example world packs signed by a **deliberately
+  public demo key** (seed committed and documented): they demonstrate the mechanism, not
+  authorship — stated plainly in `registry/README.md`.
+
 ## [0.4.0] — 2026-07-24 "Signed by the Browser"
 
 ### Added

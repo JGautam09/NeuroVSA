@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "packs": [
+    {
+      "name": "flee-predators",
+      "description": "Two lessons: flee a nearby predator, east or west. Merge into any creature.",
+      "kind": "world",
+      "file": "packs/flee-predators.json",
+      "bytes": 728,
+      "sha256": "3a20c491330a0729dcd57bc5ce309f9e18c3b784cb517800203bb49cd2a0c0be",
+      "author_public_key": "6WhaVomxHyCwvGCUbSCZRz9kn8S9k8n/vWEu+pKJc9s=",
+      "author_fingerprint": "118829cda2fefcc7"
+    },
+    {
+      "name": "picnic-basics",
+      "description": "Approach far food, eat near food — the forager starter pack.",
+      "kind": "world",
+      "file": "packs/picnic-basics.json",
+      "bytes": 707,
+      "sha256": "d9c8618b2bef594a4959f0c196aa605b17a65c7855a216316595f6d11efd7cc6",
+      "author_public_key": "6WhaVomxHyCwvGCUbSCZRz9kn8S9k8n/vWEu+pKJc9s=",
+      "author_fingerprint": "118829cda2fefcc7"
+    }
+  ]
+}
