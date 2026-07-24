@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 
@@ -15,9 +16,28 @@ import (
 // indexing request can trigger on a large or adversarial directory tree.
 const MaxIndexFiles = 5000
 
+// EncoderV1 encodes identifier NAMES only (function name, param/return names) — the
+// original encoder, kept for comparison and compatibility. EncoderV2 adds structure:
+// receiver/param/return TYPES role-bound to names, statement KINDS, and a position-
+// permuted control-flow stream, so functions with the same shape match even when every
+// identifier is renamed. The measured difference is in BENCHMARKS.md; both are
+// deterministic under a seeded dictionary.
+const (
+	EncoderV1 = 1
+	EncoderV2 = 2
+)
+
+// MaxStmtStream bounds the control-flow stream per function: statement kinds beyond this
+// many (walked in source order, nested blocks included) are ignored. Keeps encoding O(1)
+// per pathological function.
+const MaxStmtStream = 64
+
 // CodeASTIndexer parses Go source files and encodes function/struct AST trees into hyperdimensional vectors.
 type CodeASTIndexer struct {
 	Dict *core.TokenDictionary
+	// Version selects the encoding (EncoderV1 or EncoderV2). The zero value means
+	// EncoderV1, so existing constructors keep their exact historical behavior.
+	Version int
 }
 
 // FunctionASTVector represents an encoded function declaration's structural hypervector.
@@ -27,12 +47,20 @@ type FunctionASTVector struct {
 	ASTHV    core.Hypervector
 }
 
-// NewCodeASTIndexer creates a new indexer instance with a shared TokenDictionary.
+// NewCodeASTIndexer creates a new indexer instance with a shared TokenDictionary,
+// using the original names-only EncoderV1.
 func NewCodeASTIndexer(dict *core.TokenDictionary) *CodeASTIndexer {
 	if dict == nil {
 		dict = core.NewTokenDictionary()
 	}
-	return &CodeASTIndexer{Dict: dict}
+	return &CodeASTIndexer{Dict: dict, Version: EncoderV1}
+}
+
+// NewCodeASTIndexerV2 creates an indexer using the structural EncoderV2.
+func NewCodeASTIndexerV2(dict *core.TokenDictionary) *CodeASTIndexer {
+	idx := NewCodeASTIndexer(dict)
+	idx.Version = EncoderV2
+	return idx
 }
 
 // IndexFile parses a single Go source file and encodes its declarations into hypervectors.
@@ -52,43 +80,15 @@ func (indexer *CodeASTIndexer) IndexFile(filePath string) ([]FunctionASTVector, 
 			return true
 		}
 
-		funcName := fn.Name.Name
-		funcHV := indexer.Dict.GetOrRegister("func:" + funcName)
-
-		components := []core.Hypervector{funcHV}
-		paramIndex := 1
-
-		// Encode function parameters with position permutation ρ^pos(V_param)
-		if fn.Type.Params != nil {
-			for _, field := range fn.Type.Params.List {
-				for _, name := range field.Names {
-					paramHV := indexer.Dict.GetOrRegister("param:" + name.Name)
-					permutedParamHV := paramHV.Permute(paramIndex)
-					components = append(components, permutedParamHV)
-					paramIndex++
-				}
-			}
+		var astHV core.Hypervector
+		if indexer.Version == EncoderV2 {
+			astHV = indexer.encodeFuncV2(fn)
+		} else {
+			astHV = indexer.encodeFuncV1(fn)
 		}
-
-		// Encode return types with position permutation
-		if fn.Type.Results != nil {
-			for _, field := range fn.Type.Results.List {
-				if len(field.Names) > 0 {
-					for _, name := range field.Names {
-						retHV := indexer.Dict.GetOrRegister("return:" + name.Name)
-						permutedRetHV := retHV.Permute(paramIndex)
-						components = append(components, permutedRetHV)
-						paramIndex++
-					}
-				}
-			}
-		}
-
-		// Bundle function components: V_AST = V_FuncName ⊕ ρ^1(V_Param1) ⊕ ρ^2(V_Param2) ...
-		astHV := core.Bundle(components)
 
 		fnVec := FunctionASTVector{
-			FuncName: funcName,
+			FuncName: fn.Name.Name,
 			FilePath: filePath,
 			ASTHV:    astHV,
 		}
@@ -100,6 +100,141 @@ func (indexer *CodeASTIndexer) IndexFile(filePath string) ([]FunctionASTVector, 
 
 	fileHV := core.Bundle(fileComponents)
 	return funcVectors, fileHV, nil
+}
+
+// encodeFuncV1 is the original names-only encoding:
+// V_AST = V_FuncName ⊕ ρ^1(V_Param1) ⊕ ρ^2(V_Param2) ... (+ named returns).
+func (indexer *CodeASTIndexer) encodeFuncV1(fn *ast.FuncDecl) core.Hypervector {
+	components := []core.Hypervector{indexer.Dict.GetOrRegister("func:" + fn.Name.Name)}
+	paramIndex := 1
+
+	if fn.Type.Params != nil {
+		for _, field := range fn.Type.Params.List {
+			for _, name := range field.Names {
+				components = append(components, indexer.Dict.GetOrRegister("param:"+name.Name).Permute(paramIndex))
+				paramIndex++
+			}
+		}
+	}
+	if fn.Type.Results != nil {
+		for _, field := range fn.Type.Results.List {
+			for _, name := range field.Names {
+				components = append(components, indexer.Dict.GetOrRegister("return:"+name.Name).Permute(paramIndex))
+				paramIndex++
+			}
+		}
+	}
+	return core.Bundle(components)
+}
+
+// encodeFuncV2 adds structure to the name signal, so functions with the same SHAPE match
+// even when every identifier is renamed:
+//
+//   - receiver TYPE (methods): role:recv ⊗ type:T
+//   - params: ρ^pos(param-name ⊗ type:T) — name and type role-bound into one slot token
+//     (unnamed params contribute the type alone)
+//   - returns: ρ^pos(rettype:T) — return TYPES, positional (v1 only saw the rare named returns)
+//   - control-flow stream: ρ^(100+i)(stmt:kind) for the first MaxStmtStream statement
+//     kinds in source order (nested blocks included). The +100 offset keeps statement
+//     positions in a different permutation space than signature positions.
+//
+// Everything still bundles by majority vote, so shared structure raises similarity
+// smoothly rather than requiring exact matches anywhere.
+func (indexer *CodeASTIndexer) encodeFuncV2(fn *ast.FuncDecl) core.Hypervector {
+	components := []core.Hypervector{indexer.Dict.GetOrRegister("func:" + fn.Name.Name)}
+
+	if fn.Recv != nil && len(fn.Recv.List) > 0 {
+		recvT := indexer.Dict.GetOrRegister("type:" + exprString(fn.Recv.List[0].Type))
+		components = append(components, indexer.Dict.GetOrRegister("role:recv").Bind(recvT))
+	}
+
+	pos := 1
+	if fn.Type.Params != nil {
+		for _, field := range fn.Type.Params.List {
+			tHV := indexer.Dict.GetOrRegister("type:" + exprString(field.Type))
+			if len(field.Names) == 0 { // unnamed parameter: the type carries the slot
+				components = append(components, tHV.Permute(pos))
+				pos++
+				continue
+			}
+			for _, name := range field.Names {
+				nameHV := indexer.Dict.GetOrRegister("param:" + name.Name)
+				components = append(components, nameHV.Bind(tHV).Permute(pos))
+				pos++
+			}
+		}
+	}
+	if fn.Type.Results != nil {
+		for _, field := range fn.Type.Results.List {
+			tHV := indexer.Dict.GetOrRegister("rettype:" + exprString(field.Type))
+			slots := len(field.Names)
+			if slots == 0 {
+				slots = 1
+			}
+			for i := 0; i < slots; i++ {
+				components = append(components, tHV.Permute(pos))
+				pos++
+			}
+		}
+	}
+
+	if fn.Body != nil {
+		streamPos := 1
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			if streamPos > MaxStmtStream {
+				return false
+			}
+			kind := stmtKind(n)
+			if kind == "" {
+				return true
+			}
+			components = append(components, indexer.Dict.GetOrRegister("stmt:"+kind).Permute(100+streamPos))
+			streamPos++
+			return true
+		})
+	}
+	return core.Bundle(components)
+}
+
+// stmtKind maps an AST node to its control-flow token ("" for nodes that are not
+// statements we track). Deliberately coarse: KINDS in ORDER are the structural signal,
+// not expression contents.
+func stmtKind(n ast.Node) string {
+	switch s := n.(type) {
+	case *ast.IfStmt:
+		return "if"
+	case *ast.ForStmt:
+		return "for"
+	case *ast.RangeStmt:
+		return "range"
+	case *ast.SwitchStmt, *ast.TypeSwitchStmt:
+		return "switch"
+	case *ast.SelectStmt:
+		return "select"
+	case *ast.AssignStmt:
+		return "assign"
+	case *ast.ReturnStmt:
+		return "return"
+	case *ast.DeferStmt:
+		return "defer"
+	case *ast.GoStmt:
+		return "go"
+	case *ast.DeclStmt:
+		return "decl"
+	case *ast.ExprStmt:
+		if _, isCall := s.X.(*ast.CallExpr); isCall {
+			return "call"
+		}
+		return ""
+	default:
+		return ""
+	}
+}
+
+// exprString renders a type expression ("[]int", "*Config", "map[string]int") for token
+// registration. types.ExprString is stdlib and fset-free.
+func exprString(e ast.Expr) string {
+	return types.ExprString(e)
 }
 
 // IndexDirectory traverses a directory recursively and indexes all .go source files.

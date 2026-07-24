@@ -67,3 +67,28 @@ beyond it, degradation is graceful (toward the noise floor), not loud. Single me
 - `Bundle` tallies set bits word-by-word (via `TrailingZeros64`) into a counter, then
   thresholds once — output is bit-identical to the naive definition. It still scales with the
   number of vectors bundled; a bit-sliced majority is the next optimization (see the roadmap).
+
+## G2 — AST encoder v2: structural retrieval (renamed-twin corpus)
+
+The question the gate asks: *can the encoder find a function whose **shape** matches when
+every identifier has been renamed?* — the case a code-search encoder exists for. The corpus
+(`parser/ast_v2_test.go`, `TestStructuralRetrievalGate`) holds 6 query functions, their 6
+**structural twins** (same signature shape and statement stream, every name changed), and 6
+**name-bait distractors** (same parameter names / near-identical function names as the
+queries, different structure). Precision@1 = the query's top-ranked neighbor is its twin.
+
+| Encoder | What it sees | P@1 (renamed twins) | Failure mode |
+| :--- | :--- | :--- | :--- |
+| v1 (names only) | func/param/return names | **0 / 6** | picks the name-bait every single time |
+| v2 (structural) | + receiver/param/return **types**, statement **kinds**, position-permuted **control-flow stream** | **6 / 6** | — |
+
+Both encoders are deterministic under the seeded dictionary; v2's cross-platform
+determinism is pinned by a SHA-256 golden (`TestEncoderV2DeterminismGolden`, enforced by CI
+on ubuntu and macos), and v1's exact historical output is protected by
+`TestEncoderV1Unchanged`.
+
+Honest limits: this measures **structural** similarity on a small curated corpus — v2 does
+not understand meaning (a renamed twin with a *reordered but equivalent* body scores lower;
+semantically different code with an identical statement-kind stream scores high). Names
+still contribute signal in v2, so name matches help when they exist. The server flag
+`-ast-encoder 1` keeps the legacy behavior.

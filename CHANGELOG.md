@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **AST encoder v2 (Phase D — structural code encoding)**: alongside v1's identifier
+  names, v2 encodes receiver/param/return **types** (role-bound: `param-name ⊗ type`),
+  statement **kinds**, and a position-permuted **control-flow stream** (first 64 statement
+  kinds in source order). Gated by a measured retrieval benchmark (G2 in BENCHMARKS.md):
+  on a renamed-twin corpus with name-bait distractors, **v1 scores 0/6 P@1** (picks the
+  name-bait every time) while **v2 scores 6/6** — structure survives renaming; names alone
+  don't. Deterministic under the seeded dictionary, pinned by a SHA-256 golden CI enforces
+  on ubuntu + macos; v1's exact historical output is protected by a bit-identity test.
+  Select with `parser.NewCodeASTIndexerV2` or the server's `-ast-encoder` flag
+  (default 2; `1` keeps legacy behavior).
+
 ## [0.6.0] — 2026-07-24 "Worlds in Contact"
 
 ### Added
