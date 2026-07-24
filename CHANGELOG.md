@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`/signal` room-code auto-connect for live sync** (the piece Phase C deferred): a tiny
+  WebSocket relay on the api server pairs exactly two peers per room and ferries the
+  **same opaque base64 blobs** the manual copy/paste flow uses — nothing else. Privacy
+  stated plainly: a signaling server necessarily sees SDP connection metadata, never world
+  data; the relay is dropped the moment the peer channel opens, and **manual paste remains
+  the serverless default**. Bounded (64 KiB frames, 256 rooms, TTL sweep, room-code
+  validation) and covered by relay tests (pairing, verbatim both-way forwarding,
+  room-full refusal, code reuse after teardown, oversized-frame disconnect); same
+  loopback-only origin policy as `/ws`. Browser: room + relay-URL inputs and an
+  *Auto connect* button beside the manual blob flow.
+- **`docs/ENGINEERING_NOTES.md`** — honest write-ups of the two live-sync findings (JS
+  2^53 JSON corruption caught by signature verification; single-site snapshot
+  re-attribution caught by property tests): symptom → mechanism → fix → transferable
+  lesson. Linked from the README docs index.
+
 ## [0.7.0] — 2026-07-24 "Shape Over Names"
 
 ### Added

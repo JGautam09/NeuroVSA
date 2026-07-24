@@ -314,6 +314,20 @@ $('syncAnswer').onclick = async () => {
   } catch (e) { log('✗ sync accept: ' + e.message); }
 };
 
+$('syncAuto').onclick = async () => {
+  if (!selected) { log('select a creature first — it is the one that will sync'); return; }
+  const room = $('syncRoom').value.trim();
+  if (!room) { log('enter a room code (share it with your peer)'); return; }
+  $('syncStatus').textContent = `pairing in room "${room}"…`;
+  try {
+    const role = await syncAutoConnect($('syncSignalUrl').value.trim(), room, selected);
+    log(`auto-connected as ${role} — the relay is closed; everything now flows peer-to-peer`);
+  } catch (e) {
+    $('syncStatus').textContent = 'offline';
+    log('✗ auto connect: ' + e.message);
+  }
+};
+
 // ---- identity (signing key) ----
 function describeSig(sig) {
   if (!sig || !sig.signed) return 'pack was unsigned (replay-verifiable only)';
