@@ -176,6 +176,27 @@ func main() {
 			}
 			return reply(identityInfo(identity), nil)
 		}),
+		// inspectPack(packJSON) — parse a pack WITHOUT applying it: signature state plus
+		// shape summary. This is what the registry trust flow calls before deciding to
+		// import/merge (the decision belongs to the player, so nothing mutates here).
+		"inspectPack": js.FuncOf(func(this js.Value, args []js.Value) any {
+			raw := []byte(args[0].String())
+			if len(raw) > rulegarden.MaxPackBytes {
+				return reply(nil, fmt.Errorf("pack is %d bytes, exceeding the %d-byte limit", len(raw), rulegarden.MaxPackBytes))
+			}
+			var p rulegarden.Pack
+			if err := json.Unmarshal(raw, &p); err != nil {
+				return reply(nil, fmt.Errorf("invalid pack: %w", err))
+			}
+			info := packSignatureInfo(p)
+			info["seed"] = strconv.FormatUint(p.Seed, 10)
+			info["ticks"] = p.Ticks
+			info["events"] = len(p.Events)
+			if len(p.PublicKey) > 0 {
+				info["public_key_b64"] = base64.StdEncoding.EncodeToString(p.PublicKey)
+			}
+			return reply(info, nil)
+		}),
 		// exportPack() — the shareable seed+log world pack, signed when an identity is
 		// active (signing is additive; unsigned export still replays identically).
 		"exportPack": js.FuncOf(func(this js.Value, args []js.Value) any {

@@ -1,0 +1,44 @@
+{
+ "version": 1,
+ "seed": 1001,
+ "ticks": 0,
+ "events": [
+  {
+   "tick": 0,
+   "op": "spawn_creature",
+   "x": 12,
+   "y": 12
+  },
+  {
+   "tick": 0,
+   "op": "spawn_object",
+   "kind": "predator",
+   "x": 16,
+   "y": 12
+  },
+  {
+   "tick": 0,
+   "op": "teach",
+   "creature": 1,
+   "percept": {
+    "sees": "predator",
+    "dist": "near",
+    "dir": "E"
+   },
+   "action": "move-away"
+  },
+  {
+   "tick": 0,
+   "op": "teach",
+   "creature": 1,
+   "percept": {
+    "sees": "predator",
+    "dist": "near",
+    "dir": "W"
+   },
+   "action": "move-away"
+  }
+ ],
+ "public_key": "6WhaVomxHyCwvGCUbSCZRz9kn8S9k8n/vWEu+pKJc9s=",
+ "signature": "/v9mWD6dapDCvKudv5ro7xKIoldM1ICLzhgJV0WpQtvUGCwAO62+wkuSac0qqRtctv+pcGHlx1fxFRXrHtq7Aw=="
+}

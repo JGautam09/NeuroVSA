@@ -38,6 +38,21 @@ Every decision carries a **basis**:
   analogical source named — not hidden;
 - **instinct** — nothing matched (margin at the noise floor); the creature wanders.
 
+## The pack registry (opt-in)
+
+The page's **Pack registry** panel browses a [static, GitHub-native registry](../registry/)
+of signed packs — the default manifest URL points at this repo's `registry/index.json` on
+`main`. Nothing is fetched until you press *Load* (the page is otherwise fully offline), and
+every import is gated the same way: manifest `sha256` check → embedded **ed25519 signature
+verification in the engine** → an SSH-known-hosts-style trust prompt the first time you see
+a signer (trusted signers are remembered locally). The signature is authoritative; the
+manifest is only a catalog. Publishing is a pull request — see
+[`registry/README.md`](../registry/README.md) and the `nvsa-pack` CLI.
+
+To browse the *local* registry copy while developing, serve the repo root instead:
+`python3 -m http.server 8090` → open `http://localhost:8090/web/rulegarden/` and load
+`/registry/index.json`.
+
 ## Determinism contract
 
 A world **is** its `seed + event log` — a few hundred bytes of JSON. Same pack ⇒ bit-identical

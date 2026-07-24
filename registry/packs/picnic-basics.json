@@ -1,0 +1,44 @@
+{
+ "version": 1,
+ "seed": 1002,
+ "ticks": 0,
+ "events": [
+  {
+   "tick": 0,
+   "op": "spawn_creature",
+   "x": 6,
+   "y": 6
+  },
+  {
+   "tick": 0,
+   "op": "spawn_object",
+   "kind": "food",
+   "x": 7,
+   "y": 6
+  },
+  {
+   "tick": 0,
+   "op": "teach",
+   "creature": 1,
+   "percept": {
+    "sees": "food",
+    "dist": "near",
+    "dir": "E"
+   },
+   "action": "eat"
+  },
+  {
+   "tick": 0,
+   "op": "teach",
+   "creature": 1,
+   "percept": {
+    "sees": "food",
+    "dist": "far",
+    "dir": "E"
+   },
+   "action": "move-toward"
+  }
+ ],
+ "public_key": "6WhaVomxHyCwvGCUbSCZRz9kn8S9k8n/vWEu+pKJc9s=",
+ "signature": "bY58kj+4b+Cbkpau4633iVtNTjGMF6t6cnzD7ffYI0ZVXd9nvwzyAfebngaf7QhUB3rXGoChbC/SRt1Kg5w4Bw=="
+}

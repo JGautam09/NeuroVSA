@@ -131,10 +131,11 @@ core/       VSA vector physics — bind/bundle/permute, POPCNT Hamming, seeded i
 parser/     Go AST → hypervector structural encoder
 engine/     CRDT associative memory (ledger + mmap + merge), decoder, router, certificates
 rulegarden/ Deterministic teachable world (headless core; wasm bridge in cmd/, page in web/)
+registry/   Static signed-pack registry (manifest + packs; publishing is a pull request)
 api/        Concurrent WebSocket server (per-connection agent state, loopback origin check)
 ui/         React 18 + Tailwind streaming terminal
 arena/      Honest HDC-vs-neural routing benchmark (Go + Python)
-cmd/        rulegarden-wasm bridge · nvsa-verify receipt/pack verifier
+cmd/        rulegarden-wasm bridge · nvsa-verify verifier · nvsa-pack registry publisher
 ```
 
 Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [developer guide](docs/developer_guide.md) · [user manual](docs/user_manual.md).

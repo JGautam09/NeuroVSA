@@ -216,6 +216,73 @@ $('receipt').onclick = () => {
 
 $('hash').onclick = () => log('world hash: ' + call('hash'));
 
+// ---- pack registry ----
+$('regLoad').onclick = async () => {
+  // Absolutize once (relative inputs like /registry/index.json are valid); every pack
+  // fetch below resolves against this absolute manifest URL.
+  const url = new URL($('regUrl').value.trim(), location.href).href;
+  const listEl = $('regList');
+  listEl.textContent = 'loading…';
+  try {
+    const manifest = await fetchRegistry(url);
+    listEl.innerHTML = '';
+    if (!manifest.packs.length) { listEl.textContent = 'registry is empty'; return; }
+    for (const entry of manifest.packs) {
+      const row = document.createElement('div');
+      row.style.margin = '3px 0';
+      const label = document.createElement('span');
+      // textContent only: registry strings are untrusted data, never markup.
+      label.textContent = `${entry.name} (${entry.kind}, ${entry.bytes}B) by ${entry.author_fingerprint} — ${entry.description || ''} `;
+      row.appendChild(label);
+      if (entry.kind === 'world') {
+        const imp = document.createElement('button');
+        imp.textContent = 'Import';
+        imp.onclick = () => applyRegistryPack(url, entry, 'import');
+        const mrg = document.createElement('button');
+        mrg.textContent = 'Merge→selected';
+        mrg.style.marginLeft = '4px';
+        mrg.onclick = () => applyRegistryPack(url, entry, 'merge');
+        row.appendChild(imp);
+        row.appendChild(mrg);
+      } else {
+        const note = document.createElement('span');
+        note.className = 'muted';
+        note.textContent = '(lesson pack — use the Go API/CLI)';
+        row.appendChild(note);
+      }
+      listEl.appendChild(row);
+    }
+    log(`registry loaded: ${manifest.packs.length} pack(s) from ${url}`);
+  } catch (e) {
+    listEl.textContent = '✗ ' + e.message;
+    log('✗ registry: ' + e.message);
+  }
+};
+
+async function applyRegistryPack(manifestUrl, entry, mode) {
+  try {
+    if (mode === 'merge' && !selected) { log('select a creature first — it will absorb the pack lessons'); return; }
+    const packJSON = await fetchPackVerified(manifestUrl, entry);
+    const inspect = call('inspectPack', packJSON);
+    if (!inspect) return;
+    if (!confirmPack(entry, inspect)) { log(`skipped "${entry.name}"`); return; }
+    if (mode === 'import') {
+      const data = call('importPack', packJSON);
+      if (!data) return;
+      refresh(data.state);
+      selected = null;
+      log(`imported "${entry.name}" from the registry — ` + describeSig(data.pack_signature));
+    } else {
+      const data = call('mergeBrains', packJSON, selected);
+      if (!data) return;
+      refresh(data.state);
+      log(`merged "${entry.name}" into creature #${selected} — ` + describeSig(data.pack_signature));
+    }
+  } catch (e) {
+    log('✗ registry pack: ' + e.message);
+  }
+}
+
 // ---- identity (signing key) ----
 function describeSig(sig) {
   if (!sig || !sig.signed) return 'pack was unsigned (replay-verifiable only)';
