@@ -138,7 +138,7 @@ arena/      Honest HDC-vs-neural routing benchmark (Go + Python)
 cmd/        rulegarden-wasm bridge · nvsa-verify verifier · nvsa-pack registry publisher
 ```
 
-Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [developer guide](docs/developer_guide.md) · [user manual](docs/user_manual.md).
+Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [developer guide](docs/developer_guide.md) · [user manual](docs/user_manual.md) · [engineering notes](docs/ENGINEERING_NOTES.md) (honest findings & lessons).
 
 ---
 
