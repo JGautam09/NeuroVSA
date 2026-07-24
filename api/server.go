@@ -130,6 +130,9 @@ func NewServer(port int) *Server {
 // Start launches the HTTP and WebSocket server listeners.
 func (s *Server) Start() error {
 	http.HandleFunc("/ws", s.handleWebSocket)
+	// Optional live-sync signaling relay (room-code auto-connect for RuleGarden).
+	// Same loopback-only origin policy as /ws; relays opaque blobs, never world data.
+	http.HandleFunc("/signal", newSignalHub().handle)
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "NeuroVSA HDC Engine operational. Dict Size: %d", s.Dict.Size())

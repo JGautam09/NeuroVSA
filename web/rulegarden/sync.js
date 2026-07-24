@@ -128,6 +128,49 @@ function syncHandle(msg) {
   throw new Error(`unknown peer message type ${msg.t} — dropped`);
 }
 
+// syncAutoConnect: the optional room-code path — a tiny signaling relay (`/signal` on the
+// NeuroVSA api server) ferries the SAME base64 blobs the manual flow copy/pastes, and
+// nothing else. First peer in the room hosts; second joins; the relay is closed as soon as
+// the data channel opens. Resolves with our role, or rejects with a reason.
+function syncAutoConnect(signalURL, roomCode, creatureID) {
+  return new Promise((resolve, reject) => {
+    let role = null, settled = false, ws;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(watch);
+      clearTimeout(deadline);
+      try { if (ws && ws.readyState <= 1) ws.close(); } catch (e) { /* already closed */ }
+      if (err) reject(err); else resolve(role);
+    };
+    try {
+      ws = new WebSocket(signalURL + '?room=' + encodeURIComponent(roomCode));
+    } catch (e) {
+      return reject(new Error('bad signal URL: ' + e.message));
+    }
+    ws.onerror = () => finish(new Error('signal relay unreachable (is the api server running?)'));
+    ws.onclose = () => { if (!syncConnected()) finish(new Error('signal channel closed before pairing')); };
+    ws.onmessage = async (ev) => {
+      const raw = ev.data;
+      try {
+        if (typeof raw === 'string' && raw[0] === '{') { // control frame from the relay
+          const m = JSON.parse(raw);
+          if (m.type === 'role') { role = m.role; liveSync.onLog(`signal: room "${roomCode}", we are ${role}`); return; }
+          if (m.type === 'peer-joined' && role === 'host') { ws.send(await syncHost(creatureID)); return; }
+          if (m.type === 'error') { finish(new Error('relay: ' + m.error)); return; }
+          return; // peer-left etc.
+        }
+        // Opaque blob: the offer if we're joining, the answer if we're hosting.
+        if (role === 'join') ws.send(await syncJoin(raw, creatureID));
+        else await syncAcceptAnswer(raw);
+      } catch (e) { finish(e); }
+    };
+    // Success = the data channel actually opened; the relay is then no longer needed.
+    const watch = setInterval(() => { if (syncConnected()) finish(); }, 250);
+    const deadline = setTimeout(() => finish(new Error('auto-connect timed out (strict NAT? use the manual blob flow)')), 20000);
+  });
+}
+
 // Broadcast the local creature's brain after a LOCAL mutation (never after a remote apply —
 // that asymmetry is what prevents echo loops; merges are idempotent anyway).
 function syncBroadcastBrain() {

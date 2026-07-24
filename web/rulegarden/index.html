@@ -115,7 +115,12 @@
       <button id="syncAnswer" title="host only: paste the joiner's answer blob below first, then click">Accept answer</button>
       <span class="muted" id="syncStatus">offline</span>
     </div>
-    <textarea id="syncBlob" placeholder="offer/answer blob — copy to your peer, or paste theirs here" style="height:44px"></textarea>
+    <div style="margin-top:4px">
+      room <input id="syncRoom" size="10" placeholder="garden-1">
+      relay <input id="syncSignalUrl" size="24" value="ws://localhost:8080/signal">
+      <button id="syncAuto" title="auto-connect via the api server's /signal relay — it ferries the same blobs the manual flow pastes, and nothing else">Auto connect</button>
+    </div>
+    <textarea id="syncBlob" placeholder="manual fallback: offer/answer blob — copy to your peer, or paste theirs here" style="height:44px"></textarea>
     <div class="muted" style="font-size:11px">
       Brains sync creature-to-creature over a WebRTC data channel — teaches and forgets flow
       both ways while connected; the selected creature is the one that learns. Worlds need

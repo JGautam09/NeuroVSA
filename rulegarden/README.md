@@ -58,7 +58,11 @@ To browse the *local* registry copy while developing, serve the repo root instea
 Two players can connect their worlds over a **WebRTC data channel** — world data never
 touches a server. Signaling is manual copy/paste of an offer/answer blob (the same trust
 gesture as pasting a world pack; no signaling infrastructure), with public STUN for NAT
-traversal. Once connected, the selected creatures sync **creature-to-creature**: teaches and
+traversal. **Optionally**, a room code auto-connects instead: the NeuroVSA api server's
+`/signal` relay ferries the *same* blobs the manual flow pastes — and nothing else. A
+signaling server necessarily sees connection metadata (SDP carries addresses), but never
+world data, and the relay is dropped the moment the peer channel opens. Manual paste
+remains the serverless default. Once connected, the selected creatures sync **creature-to-creature**: teaches and
 transfers flow as flat, signed lesson packs; **forgets propagate as revocations** — all
 applied through logged `apply_pack`/`revoke_pack` world events, so a live-synced world still
 replays bit-exactly. Convergence is the NeuroMesh CRDT doing its job: re-sent packs are
