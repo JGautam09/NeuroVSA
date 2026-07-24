@@ -85,6 +85,9 @@ type ServerResponse struct {
 	Summary string                  `json:"summary,omitempty"`
 	Error   string                  `json:"error,omitempty"`
 	Trace   *engine.PredictionTrace `json:"trace,omitempty"` // present when the client requested tracing
+	// Certificate is a replay-verifiable decision receipt (ProofRoute), attached to traced
+	// routing responses. Verify with cmd/nvsa-verify against the exported policy memory.
+	Certificate *engine.DecisionCertificate `json:"certificate,omitempty"`
 }
 
 // NewServer initializes a new API server instance.
@@ -284,10 +287,13 @@ func (s *Server) handleRouteTool(conn *websocket.Conn, traj *engine.TrajectoryTr
 	resp := ServerResponse{Type: "trajectory"}
 	if trace {
 		start := time.Now()
-		tool, tr := traj.SelectNextToolTraced()
+		tool, tr, cert, err := traj.SelectNextToolCertified()
 		resp.Action = tool
 		resp.Latency = time.Since(start).Microseconds()
 		resp.Trace = &tr
+		if err == nil {
+			resp.Certificate = &cert
+		}
 	} else {
 		tool, elapsed := traj.SelectNextTool()
 		resp.Action = tool

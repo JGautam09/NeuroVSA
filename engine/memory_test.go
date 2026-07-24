@@ -182,10 +182,10 @@ func TestRemoveErrors(t *testing.T) {
 	mem := NewAssociativeMemory()
 	id := mem.StoreAssociation(dict.GetOrRegister("a"), dict.GetOrRegister("b"))
 
-	if err := mem.RemoveAssociation(999); err == nil {
+	if err := mem.RemoveAssociation(AssociationID{Seq: 999}); err == nil {
 		t.Error("expected an error removing an unknown id")
 	}
-	if err := mem.RemoveAssociation(0); err == nil {
+	if err := mem.RemoveAssociation(AssociationID{}); err == nil {
 		t.Error("expected an error removing id 0")
 	}
 	if err := mem.RemoveAssociation(id); err != nil {
@@ -203,7 +203,7 @@ func TestRemoveErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ro.RemoveAssociation(1); err == nil {
+	if err := ro.RemoveAssociation(AssociationID{Seq: 1}); err == nil {
 		t.Error("expected an error removing from a read-only memory")
 	}
 }
@@ -245,9 +245,9 @@ func TestLedgerRoundTripV2(t *testing.T) {
 		t.Errorf("total = %d, want 2", loaded.Total())
 	}
 	want := []AssociationRecord{
-		{ID: 1, Label: "first"},
-		{ID: 2, Label: "second", Removed: true},
-		{ID: 3, Label: "third"},
+		{ID: AssociationID{Seq: 1}, Label: "first"},
+		{ID: AssociationID{Seq: 2}, Label: "second", Removed: true},
+		{ID: AssociationID{Seq: 3}, Label: "third"},
 	}
 	got := loaded.Ledger()
 	if len(got) != len(want) {
@@ -261,12 +261,12 @@ func TestLedgerRoundTripV2(t *testing.T) {
 	if ids := loaded.FindByLabel("second"); len(ids) != 0 {
 		t.Errorf("FindByLabel must not return removed entries, got %v", ids)
 	}
-	if ids := loaded.FindByLabel("third"); len(ids) != 1 || ids[0] != 3 {
+	if ids := loaded.FindByLabel("third"); len(ids) != 1 || ids[0] != (AssociationID{Seq: 3}) {
 		t.Errorf("FindByLabel(third) = %v, want [3]", ids)
 	}
 
 	// Continued exact removal after reload.
-	if err := loaded.RemoveAssociation(1); err != nil {
+	if err := loaded.RemoveAssociation(AssociationID{Seq: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if got, wantM := loaded.Matrix(), core.Bundle([]core.Hypervector{entries[2].bound}); got != wantM {

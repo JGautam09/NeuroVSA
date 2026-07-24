@@ -4,7 +4,64 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — 0.2.0 "Foundations"
+## [0.3.0] — 2026-07-24 "NeuroMesh + ProofRoute"
+
+Mergeable memories (the provenance ledger becomes a true CRDT) and verifiable decisions.
+
+### Added
+- **Decision certificates (ProofRoute)**: `IssueDecision` produces a machine-checkable
+  receipt — state vector, candidate vocabulary, ranked table, contributors, and the memory's
+  `Fingerprint` — that any holder of the memory can RE-EXECUTE to bit-exact agreement
+  (`VerifyAgainst`). Optional ed25519 signatures over a deterministic binary encoding (never
+  JSON). Traced `/route` responses now carry a certificate; `SelectNextToolCertified` issues
+  them for agent trackers.
+- **Signed lesson packs**: a pack is a mini-replica (fixed site + sequences), so
+  `ApplyPack` = a NeuroMesh merge — idempotent, deduplicating across replicas that applied
+  the same pack — and `RevokePack` tombstones the unit, with revocation propagating through
+  merges. `PackFromMemory` is the authoring flow; ed25519 signing; hex-vector JSON.
+- **`cmd/nvsa-verify`**: CLI that verifies certificates against a memory file (signature +
+  fingerprint + bit-exact re-execution) and packs (signature + installation status).
+- **RuleGarden integration (the arc closes)**: creature brains claim deterministic per-world
+  sites, enabling **merge brains across worlds** — logged as a replayable event that embeds
+  the foreign pack (merged worlds still replay bit-exactly; failed merges are atomic no-ops).
+  The creature inspector issues **downloadable decision receipts** (+ brain image) that
+  `nvsa-verify` re-executes natively — demonstrated end-to-end from a browser-issued receipt.
+  `MarshalBinary`/`UnmarshalBinary` expose the v3 memory image for wasm and atomic clones.
+- **`Merge(other)`** — associative memories now merge like replicas: ledger union with
+  monotone tombstones (forgetting propagates), content-collision detection, and a
+  `MergeReport` (added/shared/tombstones/capacity warning against the measured G0 envelope).
+  Commutativity, associativity, idempotence, and convergence under gossip interleavings are
+  proven by property tests with bit-exact fingerprint equality.
+- **`Fingerprint()`** — canonical SHA-256 over the convergent state (ledger set + tombstones
+  + vocab seed, writer identity excluded); also the memory-state anchor for upcoming decision
+  certificates.
+- **RuleGarden**: deterministic teachable world (headless Go package, wasm bridge, browser
+  page) — teach one-shot lessons, transfer by analogy, forget exactly; glass-box decisions
+  with lesson/generalization/instinct bases; worlds export as seed+event-log packs with
+  golden-tested replay determinism. G0 capacity gate published in BENCHMARKS.md.
+
+### Changed
+- **Breaking:** `AssociationID` is now composite `(Site, Seq)` — `"site:seq"` in JSON — so
+  distinct writers can never collide; `SetSite` claims writer identity (and recomputes the
+  next sequence for the chosen site, so switching to a merged-in site cannot mint a colliding
+  ID).
+- **Breaking:** memory file format is v3 (adds site; composite-ID ledger entries; canonical
+  entry order). v1/v2 files are rejected with a descriptive error.
+
+### Security / hardening (post-review)
+- The memory loader now bounds the untrusted ledger count against the file's byte budget
+  before allocating, parses into local state, and **rebuilds the tally and majority vector
+  from the ledger** (never trusting the serialized copies the fingerprint doesn't cover) —
+  so a malformed or matrix-tampered image cannot crash `nvsa-verify` or slip past its anchor.
+- Decision certificates gained re-derivable `ExecutedAction`/`Basis` fields: RuleGarden
+  receipts now certify the action actually taken (instinct overrides included), issued at
+  decision time against the decision-time memory image, so teaching/forgetting afterward
+  cannot make a receipt certify a different historical decision.
+- World replay is bounded (pack byte size, tick horizon, event count, merge-nesting depth),
+  so a pasted pack cannot freeze the browser.
+- `Pack.Memory` rejects labels over the 64 KiB serialization limit.
+
+## [0.2.0] — "Foundations"
 
 Determinism, provenance, and exact unlearning — the three direction-agnostic foundations
 identified by external review. Each closes a gap between a documented claim and the code.
@@ -63,4 +120,5 @@ First public release.
   the arena) instead of unbacked "breakthrough" claims.
 - Module path is now `github.com/JGautam09/NeuroVSA` (go-get-able).
 
+[0.3.0]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.3.0
 [0.1.0]: https://github.com/JGautam09/NeuroVSA/releases/tag/v0.1.0

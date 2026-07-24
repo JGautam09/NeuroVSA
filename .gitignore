@@ -44,3 +44,8 @@ venv/
 
 # Logs
 *.log
+web/rulegarden/rulegarden.wasm
+web/rulegarden/wasm_exec.js
+# Root-level Go build artifacts (anchored so they don't match the cmd/ source dirs).
+/rulegarden-wasm
+/nvsa-verify

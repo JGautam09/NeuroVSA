@@ -34,7 +34,7 @@ func BenchmarkRemoveAssociation(b *testing.B) {
 
 	const batch = 4096
 	mem := NewAssociativeMemory()
-	next := AssociationID(1)
+	next := AssociationID{Seq: 1}
 	avail := 0
 
 	b.ResetTimer()
@@ -45,13 +45,13 @@ func BenchmarkRemoveAssociation(b *testing.B) {
 			for j := 0; j < batch; j++ {
 				mem.StoreAssociation(ctx, tgt)
 			}
-			next, avail = 1, batch
+			next, avail = AssociationID{Seq: 1}, batch
 			b.StartTimer()
 		}
 		if err := mem.RemoveAssociation(next); err != nil {
 			b.Fatal(err)
 		}
-		next++
+		next.Seq++
 		avail--
 	}
 }
