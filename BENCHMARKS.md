@@ -21,7 +21,7 @@ The benchmark harness is committed alongside the code:
 | :--- | :--- | :--- |
 | `Bind` (⊗) | ~76 ns | XOR across 157 `uint64` words |
 | `Permute` (ρ) | ~286 ns | Word-level cyclic rotate over the 10,000-bit ring |
-| `Bundle8` (⊕) | ~37 µs | Majority vote over 8 vectors (word-level counter tally) |
+| `Bundle8` (⊕) | ~2.7 µs | Majority vote over 8 vectors (bit-sliced counters, 64 lanes at once; was ~35.4 µs with the per-position tally — 13×, measured back-to-back) |
 | `HammingDistance` | ~43 ns | `POPCNT` via `math/bits.OnesCount64` |
 | `StoreAssociation` | ~11.7 µs | O(D) per write, independent of corpus size N (incl. ~1.3 KB ledger provenance append) |
 | `RemoveAssociation` | ~10.9 µs | Exact unlearning: O(D) counter decrement + rematerialize, zero-alloc |
@@ -64,9 +64,15 @@ beyond it, degradation is graceful (toward the noise floor), not loud. Single me
   is what makes `RemoveAssociation` exact and glass-box traces able to name contributors.
 - `RemoveAssociation` is the counter-decrement inverse of a store: the result is bit-identical
   to a memory that never stored the entry, with no retraining and no dependence on corpus size.
-- `Bundle` tallies set bits word-by-word (via `TrailingZeros64`) into a counter, then
-  thresholds once — output is bit-identical to the naive definition. It still scales with the
-  number of vectors bundled; a bit-sliced majority is the next optimization (see the roadmap).
+- `Bundle` is bit-sliced (since v0.9.0): each of the 157 word columns sums its N input
+  words into a bit-sliced counter by ripple-carry addition, then a bit-sliced comparator
+  computes `count > N/2` (plus the even-N tie lanes) for 64 bit positions at once —
+  O(NumWords · N · log N) word ops, no `[Dimension]`-sized tally, still zero-alloc. The
+  output is bit-identical to the naive per-position definition *including the deterministic
+  tie-break*, enforced by two independent differential tests (`TestBundleMatchesNaive`,
+  `TestBundleMatchesReference`) and a fuzz target (`FuzzBundleDifferential`) — world hashes,
+  golden vectors, and committed arena accuracy numbers were required to come out unchanged,
+  and did.
 
 ## G2 — AST encoder v2: structural retrieval (renamed-twin corpus)
 

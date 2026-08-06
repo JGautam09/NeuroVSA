@@ -201,9 +201,14 @@ func TieBreakBit(k int) bool {
 // If count < N/2, result bit is 0.
 // For ties (even N, count == N/2), deterministic tie-breaking is used (see tieBreak).
 //
-// It tallies set bits word-by-word (iterating only the set bits of each word via
-// TrailingZeros64) into a per-position counter, then thresholds once — O(NumWords) word ops
-// per vector instead of O(Dimension) bit probes. Output is identical to the naive definition.
+// Implementation: BIT-SLICED counting — 64 bit positions are counted simultaneously per
+// word column. For each of the NumWords columns, the N input words are summed into a
+// bit-sliced counter (planes[p] holds bit p of every lane's count) by ripple-carry
+// addition, then a bit-sliced comparator computes count > N/2 (and count == N/2 for the
+// even-N tie lanes) across all 64 lanes at once. Total work is O(NumWords · N · log N)
+// word operations, with no [Dimension]-sized tally and no per-bit loop. The output is
+// bit-identical to the naive per-position definition, including the tie-break —
+// enforced by a differential test and fuzz target against the reference implementation.
 func Bundle(vectors []Hypervector) Hypervector {
 	if len(vectors) == 0 {
 		return Hypervector{}
@@ -213,27 +218,45 @@ func Bundle(vectors []Hypervector) Hypervector {
 	}
 
 	n := len(vectors)
-	var counts [Dimension]uint32
-	for v := range vectors {
-		for i := 0; i < NumWords; i++ {
-			w := vectors[v].Vector[i]
-			base := i * 64
-			for w != 0 {
-				counts[base+bits.TrailingZeros64(w)]++
-				w &= w - 1 // clear lowest set bit
-			}
-		}
-	}
+	threshold := uint64(n / 2)
+	// Lane counts never exceed n, so bits.Len64(n) planes can be non-zero; the ripple
+	// carry cannot escape plane nb-1. planes[64] would only be reachable for n ≥ 2^64.
+	nb := bits.Len64(uint64(n))
+	even := n%2 == 0
 
 	var res Hypervector
-	for k := 0; k < Dimension; k++ {
-		c2 := int(counts[k]) * 2
-		if c2 > n {
-			res.SetBit(k)
-		} else if c2 == n && tieBreak.GetBit(k) == 1 {
-			// Exact tie (only possible for even N): deterministic, symmetric tie-break.
-			res.SetBit(k)
+	var planes [64]uint64
+	for w := 0; w < NumWords; w++ {
+		for p := 0; p < nb; p++ {
+			planes[p] = 0
 		}
+		// Sum the column: add each input word into the bit-sliced counter (ripple carry).
+		for v := range vectors {
+			carry := vectors[v].Vector[w]
+			for p := 0; carry != 0; p++ {
+				t := planes[p] & carry
+				planes[p] ^= carry
+				carry = t
+			}
+		}
+		// Compare every lane's count against the constant threshold, MSB down:
+		// gt lanes have count > threshold; eq lanes (tracked for even N) have count == it.
+		var gt uint64
+		eq := ^uint64(0)
+		for p := nb - 1; p >= 0; p-- {
+			var tb uint64
+			if threshold>>uint(p)&1 == 1 {
+				tb = ^uint64(0)
+			}
+			gt |= eq & planes[p] &^ tb
+			eq &= ^(planes[p] ^ tb)
+		}
+		word := gt
+		if even {
+			// Exact tie (only possible for even N): deterministic, symmetric tie-break.
+			word |= eq & tieBreak.Vector[w]
+		}
+		res.Vector[w] = word
 	}
 
 	res.Vector[NumWords-1] &= LastWordMask
