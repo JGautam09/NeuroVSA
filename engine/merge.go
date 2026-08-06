@@ -65,12 +65,14 @@ func (am *AssociativeMemory) Merge(other *AssociativeMemory) (MergeReport, error
 		return rep, fmt.Errorf("vocab seed mismatch (%d vs %d): memories from different vocabularies cannot merge — their vectors do not mean the same thing", am.vocabSeed, srcSeed)
 	}
 
-	// Validation pass first: a site collision must abort with NO partial effects.
+	// Validation pass first: a site collision must abort with NO partial effects. Content
+	// equality covers the sem field too — two entries that agree on label and vector but
+	// claim different SEMANTICS are divergent history, not shared history.
 	for i := range srcLedger {
 		oe := &srcLedger[i]
 		if idx, ok := am.index[oe.id]; ok {
 			le := &am.ledger[idx]
-			if le.label != oe.label || le.bound != oe.bound {
+			if le.label != oe.label || le.sem != oe.sem || le.bound != oe.bound {
 				return rep, fmt.Errorf("association %s exists on both sides with different content — site collision or divergent writer history; refusing to merge", oe.id)
 			}
 		}
@@ -93,7 +95,7 @@ func (am *AssociativeMemory) Merge(other *AssociativeMemory) (MergeReport, error
 
 		// New entry: adopt it (tombstoned entries arrive as tombstones — history without votes).
 		am.index[oe.id] = len(am.ledger)
-		am.ledger = append(am.ledger, ledgerEntry{id: oe.id, label: oe.label, removed: oe.removed, bound: oe.bound})
+		am.ledger = append(am.ledger, ledgerEntry{id: oe.id, label: oe.label, sem: oe.sem, removed: oe.removed, bound: oe.bound})
 		if !oe.removed {
 			am.addBits(oe.bound)
 			am.total++
@@ -182,6 +184,12 @@ func (am *AssociativeMemory) hashConvergentStateLocked(h hash.Hash) {
 		le.PutUint64(buf[:], uint64(len(e.label)))
 		h.Write(buf[:])
 		h.Write([]byte(e.label))
+		// The sem field is future-relevant state (Transfer reads it; merges compare it), so
+		// it MUST be inside the fingerprint — the P1-3 lesson: two memories that hash equal
+		// must be unable to diverge on any later operation.
+		le.PutUint64(buf[:], uint64(len(e.sem)))
+		h.Write(buf[:])
+		h.Write([]byte(e.sem))
 		for i := 0; i < core.NumWords; i++ {
 			le.PutUint64(buf[:], e.bound.Vector[i])
 			h.Write(buf[:])

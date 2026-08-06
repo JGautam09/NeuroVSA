@@ -85,10 +85,6 @@ function render() {
   renderInspector();
 }
 
-function basisSpan(basis) {
-  return `<span class="basis-${basis}">${basis}</span>`;
-}
-
 function renderInspector() {
   const cr = (state.creatures || []).find((c) => c.id === selected);
   $('noSelection').style.display = cr ? 'none' : '';
@@ -129,7 +125,11 @@ function renderInspector() {
     dec.appendChild(el('span', { text: 'no decision yet — tick the world', className: 'muted' }));
   }
 
-  // Lessons ledger — DOM rows; l.label is untrusted, set via textContent.
+  // Lessons ledger — DOM rows, everything through el()/textContent (labels are untrusted).
+  // A structured lesson renders its MACHINE-VERIFIED meaning (percept → action from the
+  // sem record, checked against the bound vector at import); its label appears only as a
+  // nickname when it differs. Legacy (pre-sem) imports render their label with a marker —
+  // the label was validated at import, but such lessons cannot transfer.
   const lessons = $('lessons');
   clear(lessons);
   lessons.appendChild(el('tr', {}, [el('th', { text: 'id' }), el('th', { text: 'lesson' }), el('th')]));
@@ -144,18 +144,36 @@ function renderInspector() {
       };
       actionCell.appendChild(btn);
     }
+    const lessonCell = el('td', { className: l.removed ? 'removed' : '' });
+    if (l.structured) {
+      const canonical = `${l.percept} → ${l.action}`;
+      lessonCell.appendChild(el('span', { text: canonical }));
+      if (l.parent) lessonCell.appendChild(el('span', { text: ` (from ${l.parent})`, className: 'muted' }));
+      if (l.label && l.label !== canonical && !l.label.startsWith(canonical)) {
+        lessonCell.appendChild(el('div', { text: `“${l.label}”`, className: 'muted' }));
+      }
+    } else {
+      lessonCell.appendChild(el('span', { text: l.label }));
+      lessonCell.appendChild(el('span', { text: ' [legacy — no verified semantics]', className: 'muted' }));
+    }
     lessons.appendChild(el('tr', { className: 'lesson-row' }, [
       el('td', { text: l.id }),
-      el('td', { text: l.label, className: l.removed ? 'removed' : '' }),
+      lessonCell,
       actionCell,
     ]));
   }
 
-  // Transfer select — option text via textContent (label is untrusted).
+  // Transfer select — structured lessons only carry transferable semantics; legacy entries
+  // are listed disabled so the refusal is visible before the click, not after.
   const xLesson = $('xLesson');
   clear(xLesson);
   for (const l of (cr.lessons || []).filter((x) => !x.removed)) {
-    xLesson.appendChild(el('option', { text: `#${l.id} ${l.label.slice(0, 40)}`, attrs: { value: l.id } }));
+    const text = l.structured
+      ? `#${l.id} ${l.percept} → ${l.action}`
+      : `#${l.id} ${l.label.slice(0, 40)} (legacy — re-teach to transfer)`;
+    const opt = el('option', { text, attrs: { value: l.id } });
+    if (!l.structured) opt.setAttribute('disabled', '');
+    xLesson.appendChild(opt);
   }
 }
 

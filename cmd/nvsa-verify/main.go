@@ -31,7 +31,7 @@ func main() {
 	certPath := flag.String("cert", "", "decision certificate JSON to verify (requires -memory)")
 	packPath := flag.String("pack", "", "lesson pack JSON to verify")
 	worldPath := flag.String("world", "", "world pack JSON to verify and replay")
-	memPath := flag.String("memory", "", "memory file (v3) the certificate/pack is checked against")
+	memPath := flag.String("memory", "", "memory file (v4) the certificate/pack is checked against")
 	requireSig := flag.Bool("require-signature", false, "fail unsigned certificates/packs")
 	flag.Parse()
 
@@ -145,6 +145,14 @@ func verifyPack(packPath, memPath string, requireSig bool) {
 	}
 
 	okOverall := (!signed && !requireSig) || sigOK
+
+	// Semantics check: a signature proves WHO signed; this proves the pack's claimed
+	// meaning matches its vectors. RuleGarden-domain sems are re-encoded through the fixed
+	// shared vocabulary and compared bit-exactly to the bound vector; unknown domains are
+	// reported, never silently treated as verified.
+	if !verifyPackSems(&pack) {
+		okOverall = false
+	}
 	if memPath != "" {
 		mem := engine.NewAssociativeMemory()
 		if err := mem.LoadFromFile(memPath); err != nil {
@@ -172,6 +180,57 @@ func verifyPack(packPath, memPath string, requireSig bool) {
 	if !okOverall {
 		os.Exit(1)
 	}
+}
+
+// verifyPackSems validates every sem-carrying entry of a flat lesson pack and reports per
+// entry. Returns false if any rulegarden-domain sem is malformed or contradicts its bound
+// vector (a forged semantics/vector pair). Entries without a sem are legacy — importable
+// under the label rule, but noted so a reader knows they carry no verified semantics.
+func verifyPackSems(pack *engine.Pack) bool {
+	ok := true
+	legacy := 0
+	vocab := rulegarden.NewVocab()
+	for _, e := range pack.Entries {
+		if e.Sem == "" {
+			legacy++
+			continue
+		}
+		var probe struct {
+			Domain string `json:"domain"`
+		}
+		if err := json.Unmarshal([]byte(e.Sem), &probe); err != nil || probe.Domain != rulegarden.SemDomain {
+			fmt.Printf("  sem %d:%d : present (domain %q) — not verifiable by this tool\n", pack.Site, e.Seq, probe.Domain)
+			continue
+		}
+		if pack.VocabSeed != rulegarden.VocabSeed {
+			fmt.Printf("  sem %d:%d : rulegarden domain but foreign vocab seed %d — cannot re-encode\n", pack.Site, e.Seq, pack.VocabSeed)
+			ok = false
+			continue
+		}
+		ls, err := rulegarden.ParseLessonSem(e.Sem)
+		if err != nil {
+			fmt.Printf("  sem %d:%d : INVALID (%v)\n", pack.Site, e.Seq, err)
+			ok = false
+			continue
+		}
+		actHV, err := vocab.ActionHV(ls.Action)
+		if err != nil {
+			fmt.Printf("  sem %d:%d : INVALID (%v)\n", pack.Site, e.Seq, err)
+			ok = false
+			continue
+		}
+		if vocab.EncodePercept(ls.Percept).Bind(actHV) != e.Bound {
+			fmt.Printf("  sem %d:%d : FORGED — bound vector contradicts the signed semantics (%s → %s)\n", pack.Site, e.Seq, ls.Percept, ls.Action)
+			ok = false
+			continue
+		}
+		fmt.Printf("  sem %d:%d : verified (%s → %s)\n", pack.Site, e.Seq, ls.Percept, ls.Action)
+	}
+	if legacy > 0 {
+		fmt.Printf("  sem       : %d legacy entr%s without machine-readable semantics (label-validated at import; cannot transfer)\n",
+			legacy, map[bool]string{true: "y", false: "ies"}[legacy == 1])
+	}
+	return ok
 }
 
 func okStr(ok bool) string {

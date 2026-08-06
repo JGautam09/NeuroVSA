@@ -16,7 +16,7 @@ import (
 // so it must track the release (a stale value attests a false engine version). Bump it with
 // each release. Verification of an EXISTING certificate uses that certificate's own recorded
 // EngineVersion field, so bumping this never invalidates receipts issued by older engines.
-const Version = "0.8.1"
+const Version = "0.9.0"
 
 // DecisionCertificate is a machine-checkable receipt for one cleanup decision: it records
 // the exact inputs (state vector, candidate vocabulary, memory fingerprint) and outputs
