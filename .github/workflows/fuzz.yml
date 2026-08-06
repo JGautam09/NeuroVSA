@@ -1,0 +1,40 @@
+name: Fuzz
+
+# Weekly fuzzing of the untrusted-input parsers (the 0.8.1 hardening targets plus the hex
+# vector decoder). CI's regular `go test` only replays the seed corpus; this workflow
+# actually explores. workflow_dispatch allows an on-demand run.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { pkg: ./engine, target: FuzzPackUnmarshal }
+          - { pkg: ./engine, target: FuzzMemoryUnmarshalBinary }
+          - { pkg: ./engine, target: FuzzHexVector }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: fuzz for 5 minutes
+        run: go test ${{ matrix.pkg }} -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime=5m
+      - name: upload failing corpus
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ matrix.target }}
+          path: engine/testdata/fuzz/
+          if-no-files-found: ignore

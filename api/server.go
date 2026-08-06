@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -54,7 +53,6 @@ func checkOrigin(r *http.Request) bool {
 // connections and are read-only or internally synchronized after construction; per-agent
 // mutable routing state lives in a per-connection TrajectoryTracker (see handleWebSocket).
 type Server struct {
-	mu         sync.Mutex
 	Port       int
 	Dict       *core.TokenDictionary
 	Memory     *engine.AssociativeMemory

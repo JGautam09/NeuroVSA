@@ -97,3 +97,61 @@ jobs:
         # Guards P0-1: no untrusted string may reach innerHTML in the RuleGarden page, and the
         # DOM renderer must reject an event-handler payload. See web/rulegarden/security.test.mjs.
         run: node web/rulegarden/security.test.mjs
+
+  staticcheck:
+    name: staticcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  coverage:
+    name: coverage floors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: enforce per-package coverage floors
+        # Floors sit ~2 pts under the 2026-08 baseline (docs/UPGRADE_PLAN.md). Raise them
+        # as coverage rises; never lower them to make a PR pass.
+        run: |
+          set -euo pipefail
+          fail=0
+          while read -r pkg floor; do
+            line=$(go test -count=1 -cover "$pkg" | grep -E '^ok')
+            pct=$(echo "$line" | grep -oE 'coverage: [0-9.]+' | grep -oE '[0-9.]+')
+            if awk "BEGIN {exit !($pct < $floor)}"; then
+              echo "FAIL: $pkg coverage $pct% is below the $floor% floor"
+              fail=1
+            else
+              echo "ok:   $pkg coverage $pct% (floor $floor%)"
+            fi
+          done <<'EOF'
+          ./core 59
+          ./engine 84
+          ./rulegarden 79
+          ./parser 76
+          ./api 80
+          ./arena 93
+          EOF
+          exit $fail

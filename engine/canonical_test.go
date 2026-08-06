@@ -77,6 +77,30 @@ func FuzzPackUnmarshal(f *testing.F) {
 	})
 }
 
+// FuzzHexVector: no hex string may panic hvFromHex (the untrusted vector decoder behind
+// every JSON path — pack entries, certificate state). Any accepted vector must be canonical
+// and must re-encode to the same hex it was decoded from (case-insensitively — the decoder
+// accepts both cases, the encoder emits lowercase).
+func FuzzHexVector(f *testing.F) {
+	f.Add(hvToHex(core.Hypervector{}))
+	f.Add(malformedHexVector(16))
+	f.Add(malformedHexVector(63))
+	f.Add("")
+	f.Add("zz")
+	f.Fuzz(func(t *testing.T, s string) {
+		hv, err := hvFromHex(s)
+		if err != nil {
+			return
+		}
+		if err := hv.ValidateCanonical(); err != nil {
+			t.Fatalf("hvFromHex accepted a non-canonical vector: %v", err)
+		}
+		if got := hvToHex(hv); !strings.EqualFold(got, s) {
+			t.Fatalf("hex round-trip mismatch: in %q out %q", s, got)
+		}
+	})
+}
+
 // FuzzMemoryUnmarshalBinary: no byte string may panic UnmarshalBinary (the untrusted
 // memory-image loader). It errors or loads.
 func FuzzMemoryUnmarshalBinary(f *testing.F) {
