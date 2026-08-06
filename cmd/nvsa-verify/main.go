@@ -16,132 +16,147 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/JGautam09/NeuroVSA/engine"
 	"github.com/JGautam09/NeuroVSA/rulegarden"
 )
 
-func fail(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "nvsa-verify: "+format+"\n", args...)
-	os.Exit(1)
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func main() {
-	certPath := flag.String("cert", "", "decision certificate JSON to verify (requires -memory)")
-	packPath := flag.String("pack", "", "lesson pack JSON to verify")
-	worldPath := flag.String("world", "", "world pack JSON to verify and replay")
-	memPath := flag.String("memory", "", "memory file (v4) the certificate/pack is checked against")
-	requireSig := flag.Bool("require-signature", false, "fail unsigned certificates/packs")
-	flag.Parse()
+// run is main with its seams exposed for testing: argument list in, exit code out, all
+// output through the writers. Exit codes: 0 = every applicable check passed, 1 = a check
+// failed or an input was unreadable, 2 = usage error.
+func run(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("nvsa-verify", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	certPath := fs.String("cert", "", "decision certificate JSON to verify (requires -memory)")
+	packPath := fs.String("pack", "", "lesson pack JSON to verify")
+	worldPath := fs.String("world", "", "world pack JSON to verify and replay")
+	memPath := fs.String("memory", "", "memory file (v4) the certificate/pack is checked against")
+	requireSig := fs.Bool("require-signature", false, "fail unsigned certificates/packs")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
 
 	switch {
 	case *certPath != "":
 		if *memPath == "" {
-			fail("-cert requires -memory (the memory the decision was made over)")
+			fmt.Fprintln(stderr, "nvsa-verify: -cert requires -memory (the memory the decision was made over)")
+			return 1
 		}
-		verifyCert(*certPath, *memPath, *requireSig)
+		return verifyCert(*certPath, *memPath, *requireSig, stdout, stderr)
 	case *packPath != "":
-		verifyPack(*packPath, *memPath, *requireSig)
+		return verifyPack(*packPath, *memPath, *requireSig, stdout, stderr)
 	case *worldPath != "":
-		verifyWorld(*worldPath, *requireSig)
+		return verifyWorld(*worldPath, *requireSig, stdout, stderr)
 	default:
-		flag.Usage()
-		os.Exit(2)
+		fs.Usage()
+		return 2
 	}
+}
+
+func fail(stderr io.Writer, format string, args ...any) int {
+	fmt.Fprintf(stderr, "nvsa-verify: "+format+"\n", args...)
+	return 1
 }
 
 // verifyWorld checks a shared RuleGarden world pack: author signature (when present) and a
 // full bounded replay — the same tamper-evidence path the browser runs on import. Replay
 // itself re-verifies every signature, including packs quoted inside merge_brains events.
-func verifyWorld(worldPath string, requireSig bool) {
+func verifyWorld(worldPath string, requireSig bool, stdout, stderr io.Writer) int {
 	raw, err := os.ReadFile(worldPath)
 	if err != nil {
-		fail("read world pack: %v", err)
+		return fail(stderr, "read world pack: %v", err)
 	}
 	w, err := rulegarden.ImportJSON(raw)
 	if err != nil {
-		fail("world pack rejected: %v", err)
+		return fail(stderr, "world pack rejected: %v", err)
 	}
 
 	var p rulegarden.Pack
 	if err := json.Unmarshal(raw, &p); err != nil {
-		fail("parse world pack: %v", err)
+		return fail(stderr, "parse world pack: %v", err)
 	}
 	signed := len(p.Signature) > 0
-	fmt.Printf("world pack: %s — seed %d, %d events, %d ticks\n", worldPath, p.Seed, len(p.Events), p.Ticks)
-	fmt.Printf("  signature : %s\n", sigState(signed, p.VerifySignature()))
+	fmt.Fprintf(stdout, "world pack: %s — seed %d, %d events, %d ticks\n", worldPath, p.Seed, len(p.Events), p.Ticks)
+	fmt.Fprintf(stdout, "  signature : %s\n", sigState(signed, p.VerifySignature()))
 	if signed {
-		fmt.Printf("  author    : %s\n", p.SignerFingerprint())
+		fmt.Fprintf(stdout, "  author    : %s\n", p.SignerFingerprint())
 	}
-	fmt.Printf("  replay    : OK — world hash %s\n", w.Hash())
+	fmt.Fprintf(stdout, "  replay    : OK — world hash %s\n", w.Hash())
 
 	if requireSig && !signed {
-		fmt.Println("FAILED: pack is unsigned and -require-signature is set")
-		os.Exit(1)
+		fmt.Fprintln(stdout, "FAILED: pack is unsigned and -require-signature is set")
+		return 1
 	}
-	fmt.Println("VERIFIED: the pack replays deterministically" + map[bool]string{true: " and its author signature is valid.", false: " (unsigned — replay-verifiable only)."}[signed])
+	fmt.Fprintln(stdout, "VERIFIED: the pack replays deterministically"+map[bool]string{true: " and its author signature is valid.", false: " (unsigned — replay-verifiable only)."}[signed])
+	return 0
 }
 
-func verifyCert(certPath, memPath string, requireSig bool) {
+func verifyCert(certPath, memPath string, requireSig bool, stdout, stderr io.Writer) int {
 	raw, err := os.ReadFile(certPath)
 	if err != nil {
-		fail("read certificate: %v", err)
+		return fail(stderr, "read certificate: %v", err)
 	}
 	var cert engine.DecisionCertificate
 	if err := json.Unmarshal(raw, &cert); err != nil {
-		fail("parse certificate: %v", err)
+		return fail(stderr, "parse certificate: %v", err)
 	}
 
 	mem := engine.NewAssociativeMemory()
 	if err := mem.LoadFromFile(memPath); err != nil {
-		fail("load memory: %v", err)
+		return fail(stderr, "load memory: %v", err)
 	}
 
 	res := cert.VerifyAgainst(mem)
-	fmt.Printf("certificate: %s (engine %s)\n", certPath, cert.EngineVersion)
+	fmt.Fprintf(stdout, "certificate: %s (engine %s)\n", certPath, cert.EngineVersion)
 	if cert.Basis != "" {
 		// Policy-annotated: the executed action is the meaningful one; the raw cleanup winner
 		// may differ (e.g. an instinct override).
-		fmt.Printf("  executed action   : %s (basis %s)\n", cert.ExecutedAction, cert.Basis)
+		fmt.Fprintf(stdout, "  executed action   : %s (basis %s)\n", cert.ExecutedAction, cert.Basis)
 		if cert.ExecutedAction != cert.Chosen {
-			fmt.Printf("  raw cleanup winner : %s (distance %d)\n", cert.Chosen, cert.Distance)
+			fmt.Fprintf(stdout, "  raw cleanup winner : %s (distance %d)\n", cert.Chosen, cert.Distance)
 		}
 	} else {
-		fmt.Printf("  chosen action     : %s (distance %d)\n", cert.Chosen, cert.Distance)
+		fmt.Fprintf(stdout, "  chosen action     : %s (distance %d)\n", cert.Chosen, cert.Distance)
 	}
 	for _, ct := range cert.Contributors {
-		fmt.Printf("  produced by       : %s  [%s]\n", ct.Label, ct.ID)
+		fmt.Fprintf(stdout, "  produced by       : %s  [%s]\n", ct.Label, ct.ID)
 	}
-	fmt.Printf("  signature         : %s\n", sigState(res.Signed, res.SignatureValid))
-	fmt.Printf("  memory fingerprint: %s\n", okStr(res.FingerprintOK))
-	fmt.Printf("  re-execution      : %s\n", okStr(res.DecisionOK))
+	fmt.Fprintf(stdout, "  signature         : %s\n", sigState(res.Signed, res.SignatureValid))
+	fmt.Fprintf(stdout, "  memory fingerprint: %s\n", okStr(res.FingerprintOK))
+	fmt.Fprintf(stdout, "  re-execution      : %s\n", okStr(res.DecisionOK))
 	if res.Detail != "" {
-		fmt.Printf("  detail            : %s\n", res.Detail)
+		fmt.Fprintf(stdout, "  detail            : %s\n", res.Detail)
 	}
 
 	if !res.OK() || (requireSig && !res.Signed) {
-		os.Exit(1)
+		return 1
 	}
-	fmt.Println("VERIFIED: the memory reproduces this decision bit-for-bit.")
+	fmt.Fprintln(stdout, "VERIFIED: the memory reproduces this decision bit-for-bit.")
+	return 0
 }
 
-func verifyPack(packPath, memPath string, requireSig bool) {
+func verifyPack(packPath, memPath string, requireSig bool, stdout, stderr io.Writer) int {
 	raw, err := os.ReadFile(packPath)
 	if err != nil {
-		fail("read pack: %v", err)
+		return fail(stderr, "read pack: %v", err)
 	}
 	var pack engine.Pack
 	if err := json.Unmarshal(raw, &pack); err != nil {
-		fail("parse pack: %v", err)
+		return fail(stderr, "parse pack: %v", err)
 	}
 
 	signed := len(pack.Signature) > 0
 	sigOK := pack.VerifySignature()
-	fmt.Printf("pack: %q — site %d, %d entries\n", pack.Name, pack.Site, len(pack.Entries))
-	fmt.Printf("  signature: %s\n", sigState(signed, sigOK))
+	fmt.Fprintf(stdout, "pack: %q — site %d, %d entries\n", pack.Name, pack.Site, len(pack.Entries))
+	fmt.Fprintf(stdout, "  signature: %s\n", sigState(signed, sigOK))
 	for _, e := range pack.Entries {
-		fmt.Printf("  %d:%d  %s\n", pack.Site, e.Seq, e.Label)
+		fmt.Fprintf(stdout, "  %d:%d  %s\n", pack.Site, e.Seq, e.Label)
 	}
 
 	okOverall := (!signed && !requireSig) || sigOK
@@ -150,13 +165,14 @@ func verifyPack(packPath, memPath string, requireSig bool) {
 	// meaning matches its vectors. RuleGarden-domain sems are re-encoded through the fixed
 	// shared vocabulary and compared bit-exactly to the bound vector; unknown domains are
 	// reported, never silently treated as verified.
-	if !verifyPackSems(&pack) {
+	if !verifyPackSems(&pack, stdout) {
 		okOverall = false
 	}
+
 	if memPath != "" {
 		mem := engine.NewAssociativeMemory()
 		if err := mem.LoadFromFile(memPath); err != nil {
-			fail("load memory: %v", err)
+			return fail(stderr, "load memory: %v", err)
 		}
 		active, removed, missing := 0, 0, 0
 		ledger := make(map[engine.AssociationID]bool) // id -> removed
@@ -174,19 +190,20 @@ func verifyPack(packPath, memPath string, requireSig bool) {
 				active++
 			}
 		}
-		fmt.Printf("  in memory: %d active, %d revoked, %d not installed\n", active, removed, missing)
+		fmt.Fprintf(stdout, "  in memory: %d active, %d revoked, %d not installed\n", active, removed, missing)
 	}
 
 	if !okOverall {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 // verifyPackSems validates every sem-carrying entry of a flat lesson pack and reports per
 // entry. Returns false if any rulegarden-domain sem is malformed or contradicts its bound
 // vector (a forged semantics/vector pair). Entries without a sem are legacy — importable
 // under the label rule, but noted so a reader knows they carry no verified semantics.
-func verifyPackSems(pack *engine.Pack) bool {
+func verifyPackSems(pack *engine.Pack, stdout io.Writer) bool {
 	ok := true
 	legacy := 0
 	vocab := rulegarden.NewVocab()
@@ -199,35 +216,35 @@ func verifyPackSems(pack *engine.Pack) bool {
 			Domain string `json:"domain"`
 		}
 		if err := json.Unmarshal([]byte(e.Sem), &probe); err != nil || probe.Domain != rulegarden.SemDomain {
-			fmt.Printf("  sem %d:%d : present (domain %q) — not verifiable by this tool\n", pack.Site, e.Seq, probe.Domain)
+			fmt.Fprintf(stdout, "  sem %d:%d : present (domain %q) — not verifiable by this tool\n", pack.Site, e.Seq, probe.Domain)
 			continue
 		}
 		if pack.VocabSeed != rulegarden.VocabSeed {
-			fmt.Printf("  sem %d:%d : rulegarden domain but foreign vocab seed %d — cannot re-encode\n", pack.Site, e.Seq, pack.VocabSeed)
+			fmt.Fprintf(stdout, "  sem %d:%d : rulegarden domain but foreign vocab seed %d — cannot re-encode\n", pack.Site, e.Seq, pack.VocabSeed)
 			ok = false
 			continue
 		}
 		ls, err := rulegarden.ParseLessonSem(e.Sem)
 		if err != nil {
-			fmt.Printf("  sem %d:%d : INVALID (%v)\n", pack.Site, e.Seq, err)
+			fmt.Fprintf(stdout, "  sem %d:%d : INVALID (%v)\n", pack.Site, e.Seq, err)
 			ok = false
 			continue
 		}
 		actHV, err := vocab.ActionHV(ls.Action)
 		if err != nil {
-			fmt.Printf("  sem %d:%d : INVALID (%v)\n", pack.Site, e.Seq, err)
+			fmt.Fprintf(stdout, "  sem %d:%d : INVALID (%v)\n", pack.Site, e.Seq, err)
 			ok = false
 			continue
 		}
 		if vocab.EncodePercept(ls.Percept).Bind(actHV) != e.Bound {
-			fmt.Printf("  sem %d:%d : FORGED — bound vector contradicts the signed semantics (%s → %s)\n", pack.Site, e.Seq, ls.Percept, ls.Action)
+			fmt.Fprintf(stdout, "  sem %d:%d : FORGED — bound vector contradicts the signed semantics (%s → %s)\n", pack.Site, e.Seq, ls.Percept, ls.Action)
 			ok = false
 			continue
 		}
-		fmt.Printf("  sem %d:%d : verified (%s → %s)\n", pack.Site, e.Seq, ls.Percept, ls.Action)
+		fmt.Fprintf(stdout, "  sem %d:%d : verified (%s → %s)\n", pack.Site, e.Seq, ls.Percept, ls.Action)
 	}
 	if legacy > 0 {
-		fmt.Printf("  sem       : %d legacy entr%s without machine-readable semantics (label-validated at import; cannot transfer)\n",
+		fmt.Fprintf(stdout, "  sem       : %d legacy entr%s without machine-readable semantics (label-validated at import; cannot transfer)\n",
 			legacy, map[bool]string{true: "y", false: "ies"}[legacy == 1])
 	}
 	return ok
