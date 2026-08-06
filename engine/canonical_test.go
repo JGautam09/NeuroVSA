@@ -22,6 +22,9 @@ func malformedHexVector(bit uint) string {
 // (final-word bit 16 → counter index 10000, one past [10000]uint32) must now be a clean
 // error at JSON decode — never a panic.
 func TestPackRejectsNonCanonicalVector(t *testing.T) {
+	if core.Dimension%64 == 0 {
+		t.Skip("this dimension fills its final word — there are no excess bits to reject")
+	}
 	packJSON := `{"name":"evil","vocab_seed":"0","site":"1","entries":[{"seq":1,"label":"x","bound_hex":"` +
 		malformedHexVector(16) + `"}]}`
 	var p Pack
@@ -52,7 +55,10 @@ func TestCanonicalVectorAccepted(t *testing.T) {
 
 // TestEveryExcessBitRejected: each of the 48 excess bits must be caught individually.
 func TestEveryExcessBitRejected(t *testing.T) {
-	for bit := uint(16); bit < 64; bit++ {
+	if core.Dimension%64 == 0 {
+		t.Skip("this dimension fills its final word — there are no excess bits to reject")
+	}
+	for bit := uint(core.Dimension % 64); bit < 64; bit++ {
 		var hv core.Hypervector
 		hv.Vector[core.NumWords-1] = uint64(1) << bit
 		if err := hv.ValidateCanonical(); err == nil {

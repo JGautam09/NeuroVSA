@@ -70,6 +70,9 @@ func recallAccuracy(t *testing.T, contexts []core.Hypervector, dict *core.TokenD
 }
 
 func TestCapacityCurveRandomContexts(t *testing.T) {
+	if core.Dimension != 10000 {
+		t.Skip("the G0 capacity envelope is measured at the default dimension; study builds re-measure it (docs/DIMENSIONALITY.md)")
+	}
 	dict := core.NewTokenDictionary()
 	t.Log("G0 capacity — RANDOM (quasi-orthogonal) contexts, 4-action cleanup")
 	t.Log("   K    accuracy   mean margin (bits)")
