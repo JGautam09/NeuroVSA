@@ -42,9 +42,14 @@ go test ./arena/ -bench BenchmarkRoute -benchmem
 
 See [ARENA_RESULTS.md](ARENA_RESULTS.md) for the generated table. On this dataset, measured on
 one Apple M5 Pro, the tiny static embedding (`model2vec potion-base-8M`) **beat** the HDC router
-on paraphrase accuracy (64% vs 38%), latency (25 vs 168 µs), and cold-add (206 vs 1,172 µs). HDC's
-clear wins were **bit-exact, cross-machine-reproducible prototypes** and **zero model artifact**
-(pure algorithm, ~KB, no downloaded model). Canonical accuracy tied at 100%.
+decisively on paraphrase accuracy (64% vs 38%) — the axis that matters for language. After the
+v0.9.0 bit-sliced `Bundle` (13× on the encode's dominant op, measured back-to-back), the HDC side
+re-measures at 15.9 µs p50 / 94 µs cold-add vs the neural side's committed 25 µs / 206 µs — the
+latency and cold-add axes flip to HDC, with a caveat stated honestly: the neural JSON is the
+prior committed run on the same machine, not a same-session pair; both sides get re-measured
+together in the arena-v2 rerun. HDC's structural wins are unchanged: **bit-exact,
+cross-machine-reproducible prototypes** and **zero model artifact** (pure algorithm, ~KB, no
+downloaded model). Canonical accuracy tied at 100%.
 
 ## Honest caveats
 
