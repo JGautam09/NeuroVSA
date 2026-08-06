@@ -1,0 +1,16 @@
+{
+  "router": "hdc",
+  "dataset": "clinc150",
+  "classes": 150,
+  "test_total": 4500,
+  "accuracy": 0.7175555555555555,
+  "macro_f1": 0.7231415521282074,
+  "p50_us": 32.291,
+  "p99_us": 72.875,
+  "train_seconds": 0.337431125,
+  "cold_add_us": 1685.958,
+  "cold_add_intent": "accept_reservations",
+  "cold_add_acc_after": 0.6333333333333333,
+  "oos_auroc": 0.8044725555555555,
+  "oos_total": 1000
+}

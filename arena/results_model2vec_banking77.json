@@ -1,0 +1,14 @@
+{
+  "router": "model2vec",
+  "dataset": "banking77",
+  "classes": 77,
+  "test_total": 3080,
+  "accuracy": 0.7964285714285714,
+  "macro_f1": 0.7957854246296396,
+  "p50_us": 52.45800275588408,
+  "p99_us": 85.95800318289548,
+  "train_seconds": 0.10671074999845587,
+  "cold_add_us": 1985.916998819448,
+  "cold_add_intent": "Refund_not_showing_up",
+  "cold_add_acc_after": 0.85
+}

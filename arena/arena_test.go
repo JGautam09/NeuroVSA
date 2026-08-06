@@ -183,9 +183,14 @@ func TestArenaHDC(t *testing.T) {
 		},
 	}
 
-	b, _ := json.MarshalIndent(res, "", "  ")
-	if err := os.WriteFile("results_hdc.json", b, 0o644); err != nil {
-		t.Fatalf("write results: %v", err)
+	// Results are committed reference data: only rewrite them when explicitly asked
+	// (ARENA_WRITE=1), so a plain `go test ./...` — CI, coverage runs — cannot silently
+	// replace the reference numbers with this machine's timings.
+	if os.Getenv("ARENA_WRITE") == "1" {
+		b, _ := json.MarshalIndent(res, "", "  ")
+		if err := os.WriteFile("results_hdc.json", b, 0o644); err != nil {
+			t.Fatalf("write results: %v", err)
+		}
 	}
 
 	fmt.Printf("\n=== NeuroVSA HDC Router — Structured Routing Arena ===\n")
