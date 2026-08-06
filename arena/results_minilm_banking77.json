@@ -1,0 +1,14 @@
+{
+  "router": "minilm",
+  "dataset": "banking77",
+  "classes": 77,
+  "test_total": 3080,
+  "accuracy": 0.8493506493506493,
+  "macro_f1": 0.8478280187580284,
+  "p50_us": 2864.957998099271,
+  "p99_us": 5034.708003222477,
+  "train_seconds": 5.9014687500020955,
+  "cold_add_us": 120472.37499791663,
+  "cold_add_intent": "Refund_not_showing_up",
+  "cold_add_acc_after": 0.9
+}
