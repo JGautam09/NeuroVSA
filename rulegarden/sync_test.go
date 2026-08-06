@@ -204,9 +204,11 @@ func TestLiveSyncGossipConvergence(t *testing.T) {
 	}
 }
 
-// TestApplyPackRejectsForgedLabel is the P1-4 regression: an imported lesson whose bound
-// vector contradicts the percept/action its label claims must be refused — a signature over
-// an inconsistent (label, vector) pair is not evidence the label explains the vector.
+// TestApplyPackRejectsForgedLabel is the P1-4 regression, covering every forgery direction
+// the sem field introduces: a spoofed semantic-looking label next to a valid sem, a forged
+// sem that contradicts the vector, a stripped-sem legacy downgrade with a lying label, and
+// the honest original. A signature over an inconsistent (meaning, vector) pair is not
+// evidence the meaning explains the vector.
 func TestApplyPackRejectsForgedLabel(t *testing.T) {
 	src := syncWorld(t, 91)
 	teach(t, src, "predator", DistNear, "E", ActMoveAway)
@@ -218,24 +220,58 @@ func TestApplyPackRejectsForgedLabel(t *testing.T) {
 	if len(packs) != 1 || len(packs[0].Entries) != 1 {
 		t.Fatalf("expected one single-entry pack, got %+v", packs)
 	}
-	// Keep the bound vector (encodes predator,near,E → move-away) but relabel it to CLAIM a
-	// harmless-looking different lesson. A forged pack.
-	forged := packs[0]
-	forged.Entries = append([]engine.PackEntry(nil), forged.Entries...)
-	forged.Entries[0].Label = "sees:food,near,N → eat"
 
-	dst := syncWorld(t, 92)
-	err = dst.ApplyLessonPackTo(forged, 1)
-	if err == nil || !strings.Contains(err.Error(), "contradicts its label") {
-		t.Fatalf("forged label/vector pair must be refused, got err = %v", err)
+	clone := func() engine.Pack {
+		p := packs[0]
+		p.Entries = append([]engine.PackEntry(nil), packs[0].Entries...)
+		return p
 	}
+
+	// (a) Valid sem, but a semantic-LOOKING label claiming a different lesson: the display
+	// spoof. Must be refused even though sem↔vector agree.
+	spoofed := clone()
+	spoofed.Entries[0].Label = "sees:food,near,N → eat"
+	dst := syncWorld(t, 92)
+	err = dst.ApplyLessonPackTo(spoofed, 1)
+	if err == nil || !strings.Contains(err.Error(), "contradicts the entry's verified semantics") {
+		t.Fatalf("spoofed label next to valid sem must be refused, got err = %v", err)
+	}
+
+	// (b) Forged sem: claims food→eat while the vector encodes predator→move-away.
+	forgedSem := clone()
+	forgedSem.Entries[0].Sem = EncodeLessonSem(PerceptSpec{Sees: "food", Dist: DistNear, Dir: "N"}, ActEat, "")
+	forgedSem.Entries[0].Label = "sees:food,near,N → eat" // label agrees with the forged sem
+	err = dst.ApplyLessonPackTo(forgedSem, 1)
+	if err == nil || !strings.Contains(err.Error(), "contradicts its sem") {
+		t.Fatalf("forged sem/vector pair must be refused, got err = %v", err)
+	}
+
+	// (c) Legacy downgrade: strip the sem and relabel — the v0.8.1 forgery. The label-based
+	// legacy rule must still catch it.
+	legacyForged := clone()
+	legacyForged.Entries[0].Sem = ""
+	legacyForged.Entries[0].Label = "sees:food,near,N → eat"
+	err = dst.ApplyLessonPackTo(legacyForged, 1)
+	if err == nil || !strings.Contains(err.Error(), "contradicts its label") {
+		t.Fatalf("forged legacy label/vector pair must be refused, got err = %v", err)
+	}
+
 	// And the brain is untouched (atomic refusal).
 	if len(dst.Creatures[0].Brain.Lessons()) != 0 {
-		t.Fatal("refused forged pack left lessons behind")
+		t.Fatal("refused forged packs left lessons behind")
 	}
 
-	// The honest, unmodified pack still applies.
-	if err := dst.ApplyLessonPackTo(packs[0], 1); err != nil {
+	// (d) A free-text label next to a valid sem is fine — labels are display-only now.
+	freeText := clone()
+	freeText.Entries[0].Label = "grandma's predator wisdom"
+	if err := dst.ApplyLessonPackTo(freeText, 1); err != nil {
+		t.Fatalf("free-text label with valid sem must apply: %v", err)
+	}
+
+	// (e) The honest, unmodified pack still applies (idempotent with (d)'s content? no —
+	// different label means different content under the same id, so a fresh world instead).
+	dst2 := syncWorld(t, 93)
+	if err := dst2.ApplyLessonPackTo(packs[0], 1); err != nil {
 		t.Fatalf("honest pack must apply: %v", err)
 	}
 }

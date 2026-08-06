@@ -18,8 +18,8 @@ python3 -m http.server 8090 -d web/rulegarden   # any static server works
 
 | Verb | What happens | Engine mechanism |
 | :--- | :--- | :--- |
-| **Teach** | "When you see *predator, near, E* → *move-away*." One click, learned instantly. | One labeled association: `StoreLabeled(percept ⊗ action)` |
-| **Transfer** | Reuse a lesson with a new subject (*predator→guard*) — lineage recorded. | Role substitution + re-encoding (the "dollar of Mexico" move) |
+| **Teach** | "When you see *predator, near, E* → *move-away*." One click, learned instantly. | One association with machine-readable semantics: `StoreSemantic(percept ⊗ action)` — the sem record is what signatures cover and imports validate; the label is display-only |
+| **Transfer** | Reuse a lesson with a new subject (*predator→guard*) — lineage recorded in the sem record, as data. | Role substitution + re-encoding (the "dollar of Mexico" move), reading the source lesson's **sem**, never its label |
 | **Forget** | Remove one lesson; behavior reverts, provably — the candidate table returns **bit-identical** to before the lesson existed. | Exact unlearning: O(D) counter decrement + tombstone |
 | **Merge brains** | Paste a friend's world; your creature absorbs every lesson in it, each keeping its **foreign site id** in the ledger. | NeuroMesh CRDT merge (commutative, idempotent, tombstones propagate) |
 | **Receipt** | Download a decision receipt + brain image — **ed25519-signed by your browser identity** — and verify anywhere: `nvsa-verify -cert receipt.json -memory brain.bin` re-executes the decision **bit-for-bit** (`-require-signature` for strict mode). | ProofRoute certificate anchored to the memory fingerprint |
@@ -66,8 +66,10 @@ remains the serverless default. Connecting runs a **mutual-approval handshake**:
 fingerprint before any brain data is sent — nothing leaves your tab until you both agree, and
 once a peer advertises a key every lesson it sends must be signed by it. Once connected, the
 selected creatures sync **creature-to-creature**: teaches and transfers flow as flat, signed
-lesson packs whose bound vector is checked against the label it claims (a forged label/vector
-pair is refused); **forgets propagate as revocations** — all applied through logged
+lesson packs whose bound vector is checked against the **signed sem record** it claims (a
+forged semantics/vector pair is refused, as is a semantic-looking label that contradicts the
+sem; legacy pre-0.9 packs fall back to label validation and import as non-transferable);
+**forgets propagate as revocations** — all applied through logged
 `apply_pack`/`revoke_pack` world events, so a live-synced world still replays bit-exactly. Convergence is the NeuroMesh CRDT doing its job: re-sent packs are
 no-op merges, order between mutations doesn't matter, and every lesson keeps its **author's
 site id** even when relayed.

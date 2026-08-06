@@ -7,6 +7,10 @@ neuro-vsa
 *.dylib
 *.bin
 
+# Committed test fixtures are never build artifacts — exempt testdata from the
+# binary-suffix ignores above (e.g. engine/testdata/memory_image_v3.bin).
+!**/testdata/**
+
 # OS generated files
 .DS_Store
 .DS_Store?
