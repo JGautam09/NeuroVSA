@@ -31,11 +31,12 @@ func TestCertificateIssueVerifyRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	// With two lessons bundled (even N), recall is not distance-0 but must sit decisively
-	// below the ~5000 noise floor with the correct token on top.
-	if cert.Chosen != "RunTests" || cert.Distance > 3500 {
+	// below the ~Dimension/2 noise floor with the correct token on top (thresholds scale
+	// with the build dimension).
+	if cert.Chosen != "RunTests" || cert.Distance > core.Dimension*35/100 {
 		t.Fatalf("expected decisive recall of RunTests, got %q at %d", cert.Chosen, cert.Distance)
 	}
-	if margin := cert.Candidates[1].Distance - cert.Candidates[0].Distance; margin < 500 {
+	if margin := cert.Candidates[1].Distance - cert.Candidates[0].Distance; margin < core.Dimension/20 {
 		t.Fatalf("recall margin too small: %d", margin)
 	}
 	if len(cert.Contributors) != 1 || cert.Contributors[0].Label != "alpha→RunTests" {

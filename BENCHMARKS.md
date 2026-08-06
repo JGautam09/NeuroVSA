@@ -74,6 +74,12 @@ beyond it, degradation is graceful (toward the noise floor), not loud. Single me
   golden vectors, and committed arena accuracy numbers were required to come out unchanged,
   and did.
 
+## Dimension scaling
+
+Per-op cost, routing accuracy, and the G0 capacity curve measured at D ∈ {1,024, 2,048,
+4,096, 10,000} via `hd_d*` build tags: [`docs/DIMENSIONALITY.md`](docs/DIMENSIONALITY.md)
+(`scripts/dimscan.sh` reproduces it).
+
 ## G2 — AST encoder v2: structural retrieval (renamed-twin corpus)
 
 The question the gate asks: *can the encoder find a function whose **shape** matches when

@@ -1,21 +1,32 @@
 package core
 
 import (
+	"math"
 	"testing"
 )
+
+// quasiOrthogonalBand is the acceptance band for distances that should sit at the
+// Dimension/2 noise floor: ±5·√Dimension, i.e. ±10σ of a fair-coin bit count. At the
+// default 10,000 bits this is exactly the historical [4500, 5500] band; it scales with
+// the hd_d* study dimensions instead of hardcoding the default.
+func quasiOrthogonalBand() (lo, hi int) {
+	slack := 5 * int(math.Sqrt(float64(Dimension)))
+	return Dimension/2 - slack, Dimension/2 + slack
+}
 
 func TestGenerateRandom(t *testing.T) {
 	hv := GenerateRandom()
 
-	// Ensure word 156 has bits 16-63 masked to 0
+	// Ensure the final word's excess bits (if any) are masked to 0
 	if (hv.Vector[NumWords-1] & ^LastWordMask) != 0 {
-		t.Errorf("GenerateRandom() failed to mask excess bits in word 156. Value: 0x%X", hv.Vector[NumWords-1])
+		t.Errorf("GenerateRandom() failed to mask excess bits in the final word. Value: 0x%X", hv.Vector[NumWords-1])
 	}
 
-	// Verify that random hypervectors have roughly ~5,000 active bits (near quasi-orthogonality)
+	// Verify that random hypervectors have roughly ~Dimension/2 active bits (near quasi-orthogonality)
+	lo, hi := quasiOrthogonalBand()
 	dist := HammingDistance(hv, ZeroHV())
-	if dist < 4500 || dist > 5500 {
-		t.Errorf("Random hypervector bit density outside expected range [4500, 5500]: %d", dist)
+	if dist < lo || dist > hi {
+		t.Errorf("Random hypervector bit density outside expected range [%d, %d]: %d", lo, hi, dist)
 	}
 }
 

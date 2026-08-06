@@ -52,10 +52,11 @@ func TestPermuteRoundTripAllShifts(t *testing.T) {
 // confirming the rotate actually moves bits rather than returning a near-identical vector.
 func TestPermuteDecorrelates(t *testing.T) {
 	hv := GenerateRandom()
-	for _, s := range []int{1, 3, 64, 500, 5000} {
+	lo, hi := quasiOrthogonalBand()
+	for _, s := range []int{1, 3, 64, Dimension / 20, Dimension / 2} {
 		d := HammingDistance(hv, hv.Permute(s))
-		if d < 4500 || d > 5500 {
-			t.Errorf("Permute(%d) distance from original outside [4500,5500]: %d", s, d)
+		if d < lo || d > hi {
+			t.Errorf("Permute(%d) distance from original outside [%d,%d]: %d", s, lo, hi, d)
 		}
 	}
 }
@@ -119,7 +120,7 @@ func TestBundleTieBreakDeterministicAndSymmetric(t *testing.T) {
 
 	dA := HammingDistance(first, a)
 	dB := HammingDistance(first, b)
-	if dA < 500 || dB < 500 {
+	if dA < Dimension/20 || dB < Dimension/20 {
 		t.Errorf("Bundle(a,b) collapsed onto an input: dA=%d dB=%d", dA, dB)
 	}
 }

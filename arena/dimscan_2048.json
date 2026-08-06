@@ -1,0 +1,47 @@
+{
+  "dimension": 2048,
+  "num_words": 32,
+  "bytes_per_vector": 256,
+  "bind_ns": 9,
+  "hamming_ns": 8,
+  "permute_ns": 49,
+  "bundle8_ns": 467,
+  "curated_canonical_acc": 0.9555555555555556,
+  "curated_paraphrase_acc": 0.35555555555555557,
+  "capacity": [
+    {
+      "k": 16,
+      "recall": 1,
+      "min_margin": 154
+    },
+    {
+      "k": 32,
+      "recall": 1,
+      "min_margin": 75
+    },
+    {
+      "k": 64,
+      "recall": 1,
+      "min_margin": 7
+    },
+    {
+      "k": 128,
+      "recall": 0.9765625,
+      "min_margin": 0
+    },
+    {
+      "k": 256,
+      "recall": 0.875,
+      "min_margin": 0
+    },
+    {
+      "k": 512,
+      "recall": 0.759765625,
+      "min_margin": 0
+    }
+  ],
+  "standard_acc": {
+    "banking77": 0.647077922077922,
+    "clinc150": 0.6893333333333334
+  }
+}
