@@ -8,18 +8,22 @@ import (
 )
 
 // MinDecisionMargin is the winner-vs-runner-up Hamming gap (bits) below which a decision is
-// treated as instinct (untrained) rather than a recalled lesson. G0 data: taught percepts
-// recall with margins ≥ ~450 bits (random contexts, K ≤ 128) and ~840 bits (structured
-// percepts), while untaught percepts produce only order-statistic noise gaps (≪ 200 bits).
-// 200 cleanly separates the two regimes; TestInstinctFallback verifies it empirically.
-const MinDecisionMargin = 200
+// treated as instinct (untrained) rather than a recalled lesson. G0 data at the default
+// 10,000-bit dimension: taught percepts recall with margins ≥ ~450 bits (random contexts,
+// K ≤ 128) and ~840 bits (structured percepts), while untaught percepts produce only
+// order-statistic noise gaps (≪ 200 bits). Dimension/50 = 200 at the default — the
+// empirically gated value, unchanged — and scales linearly for hd_d* study builds
+// (recall margins scale ~linearly with D; the dimensionality study re-measures them).
+const MinDecisionMargin = core.Dimension / 50
 
 // GeneralizationRadius bounds the ledger scan that names the SOURCE of an analogical
-// generalization. Exact recalls sit at probe distance 0; percepts sharing 2 of 3 roles with
-// a taught lesson land near ~2500 (each bundle bit is a 3-way majority sharing 2 inputs, so
-// ~75% of bits agree — measured in TestTransferAnalogy); unrelated lessons sit at ~5000.
-// 3300 separates "analogical neighbor" from "unrelated" with wide margins on both sides.
-const GeneralizationRadius = 3300
+// generalization. At the default dimension: exact recalls sit at probe distance 0; percepts
+// sharing 2 of 3 roles with a taught lesson land near ~2500 (each bundle bit is a 3-way
+// majority sharing 2 inputs, so ~75% of bits agree — measured in TestTransferAnalogy);
+// unrelated lessons sit at ~5000. Dimension·33/100 = 3300 at the default — unchanged —
+// separating "analogical neighbor" from "unrelated" with wide margins on both sides, and
+// scaling with the build dimension like the distances it classifies.
+const GeneralizationRadius = core.Dimension * 33 / 100
 
 // Decision is the glass-box record of one action choice — the creature inspector renders it
 // verbatim. Basis:

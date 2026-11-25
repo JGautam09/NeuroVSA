@@ -32,6 +32,9 @@ func hvToHex(hv Hypervector) string {
 // claim: the golden file was generated on one machine and must match on every other.
 // Regenerate deliberately with: UPDATE_GOLDEN=1 go test ./core/ -run TestSeededHVGolden
 func TestSeededHVGolden(t *testing.T) {
+	if Dimension != 10000 {
+		t.Skip("golden vectors are pinned at the default dimension; study builds measure instead (docs/DIMENSIONALITY.md)")
+	}
 	path := filepath.Join("testdata", "golden_vectors.json")
 
 	if os.Getenv("UPDATE_GOLDEN") == "1" {
@@ -73,14 +76,15 @@ func TestSeededHVGolden(t *testing.T) {
 }
 
 func TestSeededHVMaskedAndBalanced(t *testing.T) {
+	loBand, hiBand := quasiOrthogonalBand()
 	for _, seed := range goldenSeeds {
 		for _, tok := range goldenTokens {
 			hv := SeededHV(seed, tok)
 			if hv.Vector[NumWords-1]&^LastWordMask != 0 {
 				t.Errorf("SeededHV(%d, %q): unmasked ghost bits in word 156", seed, tok)
 			}
-			if d := HammingDistance(hv, ZeroHV()); d < 4500 || d > 5500 {
-				t.Errorf("SeededHV(%d, %q): bit density %d outside [4500, 5500]", seed, tok, d)
+			if d := HammingDistance(hv, ZeroHV()); d < loBand || d > hiBand {
+				t.Errorf("SeededHV(%d, %q): bit density %d outside [%d, %d]", seed, tok, d, loBand, hiBand)
 			}
 		}
 	}
@@ -88,11 +92,12 @@ func TestSeededHVMaskedAndBalanced(t *testing.T) {
 
 // Distinct tokens under one seed, and one token under distinct seeds, must be quasi-orthogonal.
 func TestSeededHVDecorrelates(t *testing.T) {
-	if d := HammingDistance(SeededHV(0, "func"), SeededHV(0, "main")); d < 4500 || d > 5500 {
-		t.Errorf("distinct tokens: d_H=%d outside [4500, 5500]", d)
+	loBand, hiBand := quasiOrthogonalBand()
+	if d := HammingDistance(SeededHV(0, "func"), SeededHV(0, "main")); d < loBand || d > hiBand {
+		t.Errorf("distinct tokens: d_H=%d outside [%d, %d]", d, loBand, hiBand)
 	}
-	if d := HammingDistance(SeededHV(0, "func"), SeededHV(42, "func")); d < 4500 || d > 5500 {
-		t.Errorf("distinct seeds: d_H=%d outside [4500, 5500]", d)
+	if d := HammingDistance(SeededHV(0, "func"), SeededHV(42, "func")); d < loBand || d > hiBand {
+		t.Errorf("distinct seeds: d_H=%d outside [%d, %d]", d, loBand, hiBand)
 	}
 }
 

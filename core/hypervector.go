@@ -7,16 +7,18 @@ import (
 	"math/bits"
 )
 
+// Dimension is defined per build in dims_*.go (default 10,000; hd_d1024/hd_d2048/hd_d4096
+// build tags select smaller study dimensions). NumWords and LastWordMask derive from it:
 const (
-	// Dimension is the total number of bits in a hypervector.
-	Dimension = 10000
-	// NumWords is the number of uint64 words required to store 10,000 bits.
-	NumWords = 157
-	// LastWordMask keeps only the lower 16 bits (bits 0-15) of word 156 (156 * 64 + 16 = 10000).
-	LastWordMask uint64 = 0xFFFF
+	// NumWords is the number of uint64 words required to store Dimension bits.
+	NumWords = (Dimension + 63) / 64
+	// LastWordMask keeps only the final word's used bits (all ones when Dimension is a
+	// multiple of 64; e.g. 0xFFFF for the default 10,000 = 156·64 + 16).
+	LastWordMask uint64 = ^uint64(0) >> ((64 - Dimension%64) % 64)
 )
 
-// Hypervector represents a 10,000-bit dense binary vector packed into 157 uint64 words.
+// Hypervector represents a Dimension-bit dense binary vector packed into NumWords uint64
+// words (10,000 bits in 157 words at the default dimension).
 type Hypervector struct {
 	Vector [NumWords]uint64
 }

@@ -301,6 +301,9 @@ func Alpha(beta int, gamma string) (delta int, err error) { return 0, nil }
 const goldenV2Corpus = "ece574e522614bd50fa3eeecd1afcc79dff835482a47e46bfa87ddde52fe8b09"
 
 func TestEncoderV2DeterminismGolden(t *testing.T) {
+	if core.Dimension != 10000 {
+		t.Skip("the SHA-256 golden is pinned at the default dimension")
+	}
 	vectors := indexCorpus(t, EncoderV2)
 	h := sha256.New()
 	for _, pair := range corpusPairs { // fixed iteration order

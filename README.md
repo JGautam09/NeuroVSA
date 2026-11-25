@@ -157,16 +157,22 @@ Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [develope
 
 ## Roadmap
 
-- Optional dimensionality reduction (HDC models are typically oversized at 10,000 bits).
+The original roadmap is fully shipped; parked follow-ups and their un-park triggers live in
+[`docs/UPGRADE_PLAN.md`](docs/UPGRADE_PLAN.md).
 
-**Shipped since the original roadmap:** the AST encoder v2 (role–filler encoding of
-parameter/return *types*, statement kinds, and control flow) landed in v0.7.0 and is the
-server default (`-ast-encoder 2`; `1` keeps the legacy names-only encoder) — measured against
-v1 in [`BENCHMARKS.md`](BENCHMARKS.md). The bit-sliced `Bundle` (the last non-word-level
+**Shipped:** the AST encoder v2 (role–filler encoding of parameter/return *types*,
+statement kinds, and control flow) landed in v0.7.0 and is the server default
+(`-ast-encoder 2`; `1` keeps the legacy names-only encoder) — measured against v1 in
+[`BENCHMARKS.md`](BENCHMARKS.md). The bit-sliced `Bundle` (the last non-word-level
 primitive) landed in v0.9.0: 35.4 µs → 2.7 µs for Bundle8, measured back-to-back, output
 bit-identical to the naive definition (differential + fuzz enforced). Arena v2 landed in
 v0.10.0: CLINC150 + Banking77 with TF-IDF, model2vec, and all-MiniLM baselines —
-[`arena/ARENA_RESULTS_STANDARD.md`](arena/ARENA_RESULTS_STANDARD.md).
+[`arena/ARENA_RESULTS_STANDARD.md`](arena/ARENA_RESULTS_STANDARD.md). The dimensionality
+study also landed in v0.10.0 ([`docs/DIMENSIONALITY.md`](docs/DIMENSIONALITY.md)) — and
+the "typically oversized at 10,000 bits" hypothesis **did not survive measurement** for
+this encoder: dropping to 4,096 bits costs 1.4–2.4 accuracy points on the standard
+datasets and halves the 100%-recall capacity ceiling (K=256 → K=128), while op cost
+scales linearly with D/64. 10,000 stays the default on data, not tradition.
 
 ## Contributing & security
 

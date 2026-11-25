@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/JGautam09/NeuroVSA/core"
 	"github.com/JGautam09/NeuroVSA/engine"
 )
 
@@ -69,7 +70,11 @@ func TestWorldReplayDeterminism(t *testing.T) {
 		t.Fatalf("replayed hash differs:\n live   %s\n replay %s", hash, got)
 	}
 
-	// Cross-platform pin.
+	// Cross-platform pin — only meaningful at the default dimension (the replay-vs-live
+	// equality above still ran, so determinism itself is checked on every build).
+	if core.Dimension != 10000 {
+		t.Skip("golden world hash is pinned at the default dimension")
+	}
 	golden := filepath.Join("testdata", "replay_golden.txt")
 	if os.Getenv("UPDATE_GOLDEN") == "1" {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
