@@ -52,6 +52,41 @@ function refresh(data) {
   render();
 }
 
+// This demo uses the same evaluator and receipt format as nvsa-check.
+let checkPackReplays;
+function renderCheckPackDemo() {
+  if (!$('checkPackDemo').open || !window.RuleGarden) return;
+  if (typeof window.RuleGarden.checkPackDemo === 'function') {
+    checkPackReplays ??= call('checkPackDemo');
+  }
+  const replay = checkPackReplays?.[$('checkPackStage').value];
+  const panel = $('checkPackResult');
+  const button = $('checkPackReceipt');
+  clear(panel);
+  button.disabled = !replay;
+  if (!replay) {
+    panel.appendChild(el('p', { text: 'The check demo is unavailable. Rebuild the RuleGarden WASM.' }));
+    return;
+  }
+  const result = replay.receipt.recommendation;
+  panel.appendChild(el('p', { text: 'Required: ' + (result.required.join(', ') || 'None') }));
+  panel.appendChild(el('p', { text: 'Optional: ' + (result.optional.join(', ') || 'None') }));
+  if (result.pack_conflict) {
+    panel.appendChild(el('p', { text: 'The latest signed revisions conflict. Pack suggestions were withheld.' }));
+  } else if ($('checkPackStage').value === 'revoked') {
+    panel.appendChild(el('p', { text: 'Revocation removed the pack’s optional suggestions.' }));
+  } else if (result.pack_matches?.length) {
+    panel.appendChild(el('p', { text: 'Pack revision ' + result.pack_matches[0].revision }));
+  }
+}
+
+$('checkPackDemo').addEventListener('toggle', renderCheckPackDemo);
+$('checkPackStage').addEventListener('change', renderCheckPackDemo);
+$('checkPackReceipt').addEventListener('click', () => {
+  const replay = checkPackReplays?.[$('checkPackStage').value];
+  if (replay) download('check-recommendation.json', JSON.stringify(replay, null, 2), 'application/json');
+});
+
 // ---- rendering ----
 function render() {
   if (!state) return;
@@ -445,5 +480,6 @@ function download(name, content, mime) {
     $('fp').textContent = 'unsigned';
     log('no key storage available — receipts and exports stay unsigned (replay-verifiable only)');
   }
+  renderCheckPackDemo();
   log('RuleGarden ready. Place a creature and a predator, then teach.');
 })();

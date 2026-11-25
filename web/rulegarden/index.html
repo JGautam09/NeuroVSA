@@ -108,6 +108,19 @@
       browser's IndexedDB (same-origin storage — an XSS could read it), so treat it as a game
       identity, not a valuable credential.
     </div>
+    <details id="checkPackDemo" style="margin-top:10px">
+      <summary>Check recommendation demo</summary>
+      <p>A change to <code>api/routes.go</code> is evaluated with a sample signed pack.</p>
+      <label for="checkPackStage">Pack state</label>
+      <select id="checkPackStage">
+        <option value="initial">Initial pack</option>
+        <option value="updated">New revision</option>
+        <option value="conflict">Conflicting revisions</option>
+        <option value="revoked">Revoked pack</option>
+      </select>
+      <div id="checkPackResult" aria-live="polite"></div>
+      <button id="checkPackReceipt" disabled>Download check receipt</button>
+    </details>
     <h2 style="margin-top:10px">Pack registry <span class="muted" style="font-weight:normal">(opt-in fetch)</span></h2>
     <div>
       <input id="regUrl" style="width:66%" value="https://raw.githubusercontent.com/JGautam09/NeuroVSA/main/registry/index.json">

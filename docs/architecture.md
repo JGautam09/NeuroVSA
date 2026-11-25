@@ -1,4 +1,10 @@
-# NeuroVSA Master Architectural Specification
+# NeuroVSA architecture
+
+NeuroVSA has two decision paths. The VSA engine learns associations and re-executes
+decisions from a memory snapshot. The check selector applies a versioned repository
+policy and can replay a recommendation from a policy snapshot. Only the offline
+check-selection benchmark uses the VSA engine to suggest checks. The
+[README diagram](../README.md#architecture) maps both paths.
 
 ## 1. High-Dimensional Vector Geometry & VSA Math
 
@@ -106,3 +112,17 @@ $$V_{\text{Policy}} = \bigoplus_{\text{workflows}} \; \bigoplus_{k} \big(\text{S
 
 Because the state encodes both the goal and the actions taken so far, selection is
 goal- and history-dependent. Execution latency: **$\approx 1.03\,\mu\text{s}$** (Apple M5 Pro).
+
+## 6. Repository check selection
+
+| Stage | Contract |
+| --- | --- |
+| Input | The CLI normalizes a saved fixture or committed changes from a unique Git merge base. The MCP adapter instead receives caller-supplied change records. Deleted paths and both paths of renames and copies take part in matching. |
+| Local policy | Matching rules are additive. Always-required and matched required checks take priority. If a path is uncovered or Git history is unavailable, the CLI recommends the full configured catalog and does not apply packs. |
+| Optional packs | The receiver authenticates pack events using the repository scope, per-signer allowlist and Ed25519 signature. It merges validated events in deterministic order. Revocations retire a pack name for that signer; conflicts withhold the affected imported suggestions. The local catalog governs which suggestions can appear. |
+| Receipt | The evaluator emits normalized changes, the result, and the local snapshot with its SHA-256 digest. Verification rebuilds the recommendation and optionally checks an independently recorded digest. This verifies reproducibility, not sender identity or execution. |
+| Adapters | The CLI writes text or JSON. MCP exposes read-only recommendation and explanation tools over stdio. RuleGarden uses the same evaluator compiled to WASM with sample inputs and a public demo key. |
+
+The check selector does not dispatch jobs. Keep the existing CI workflow and map check
+IDs to the maintainer's existing commands or jobs. See the [reference and
+quickstarts](check-selection-replay.md) for file formats, flags, and the trust boundary.

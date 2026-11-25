@@ -1,183 +1,131 @@
 # NeuroVSA
 
-> A from-scratch, dependency-free **Hyperdimensional Computing (HDC / Vector Symbolic Architecture)** engine in Go — deterministic, CPU-only, no external ML dependencies.
+**A deterministic, CPU-only Hyperdimensional Computing (HDC) toolkit in Go.** Build
+inspectable decision systems for structured data using binary vectors, associative
+memory, and replayable decisions. No model downloads or GPU required.
 
 [![CI](https://github.com/JGautam09/NeuroVSA/actions/workflows/ci.yml/badge.svg)](https://github.com/JGautam09/NeuroVSA/actions/workflows/ci.yml)
-[![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8?style=flat&logo=go)](https://golang.org)
-[![Go Report Card](https://goreportcard.com/badge/github.com/JGautam09/NeuroVSA)](https://goreportcard.com/report/github.com/JGautam09/NeuroVSA)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/)
+[![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-NeuroVSA implements the core VSA algebra — **bind** (XOR), **bundle** (majority vote), **permute** (cyclic rotate), and **Hamming-distance cleanup** — over 10,000-bit binary hypervectors packed into `[157]uint64`. On top of the math core it adds an associative memory with memory-mapped persistence, a Go-AST structural encoder, an agent trajectory router, and a WebSocket API with a retro React terminal UI. Every operation is integer, bitwise, and fully local.
+[Try check selection](#try-check-selection) · [Open RuleGarden](#open-rulegarden) ·
+[Architecture](#architecture) · [Benchmarks](#benchmarks) · [Contribute](CONTRIBUTING.md)
 
-> **Formerly "PhoneForge."** This is a research and learning project, not a production system.
+| I want to… | Start here |
+| --- | --- |
+| Understand which CI checks a change calls for | [Try the report-only go-chi example](examples/check-selection/chi/README.md). Keep your existing CI jobs. |
+| See what a learned decision used, and what changes when a lesson is removed | [Run RuleGarden](rulegarden/README.md), the browser-based artificial-life sandbox. |
+| Use binary vectors, mergeable associative memory, or re-executable decisions from Go | Start in [`core/`](core/) and [`engine/`](engine/); see the [developer guide](docs/developer_guide.md). |
+| Reproduce the routing or check-selection measurements | See the [routing arena](arena/README.md) and [test-selection report](arena/check-selection/RESULTS.md). |
 
----
+## Try check selection
 
-## What it is good for — and what it isn't
+`nvsa-check` is an experimental, local CLI for adding **explainable check recommendations**
+to an existing CI workflow. It reads a committed Git diff or a saved change fixture and
+returns check IDs and the rules that matched. It does not run tests or decide whether a PR
+can merge.
 
-HDC is **not** a drop-in replacement for neural networks or LLMs, and this README won't pretend otherwise. HDC shines where you need **determinism, auditability, a tiny footprint, and instant one-shot learning over structured inputs**. It has **no semantic generalization** — it matches surface form, not meaning.
+With Go 1.22 or later, from a checkout that contains `cmd/nvsa-check`:
 
-To keep the claims honest, the repo ships [**the arena**](arena/) — a head-to-head benchmark against a tiny neural embedding router on the *same* task with the *same* algorithm (only the representation differs). The measured result, on one Apple M5 Pro:
+```sh
+go build -o ./nvsa-check ./cmd/nvsa-check
 
-| Axis | NeuroVSA (HDC) | model2vec (static CPU embedding) | Winner |
-| :--- | :--- | :--- | :--- |
-| Canonical-phrasing accuracy | 100% | 100% | tie |
-| **Paraphrase accuracy** | **37.8%** | **64.4%** | **Neural** |
-| Latency p50 (encode + route) | 15.9 µs | 25.0 µs | HDC¹ |
-| Cold-add a new class | 94 µs | 206 µs | HDC¹ |
-| **Bit-exact & portable prototypes** | **yes** | no | **HDC** |
-| **Model artifact required** | **none (~KB of Go)** | yes (downloaded model) | **HDC** |
-
-¹ HDC side re-measured after the v0.9.0 bit-sliced `Bundle` (13× on the encode's dominant
-op, same-session before/after); the neural column is the prior committed run on the same
-machine. Both sides get re-measured together in the arena-v2 rerun.
-
-**Read it straight:** a small semantic embedding router beats HDC decisively on paraphrase understanding — the axis that matters for language — and that conclusion is unchanged. The bit-sliced Bundle moved the raw latency and cold-add axes to HDC on this machine's measurements (caveat above). HDC's structural wins remain **bit-exact cross-machine determinism** and **zero model artifact**.
-
-**Arena v2 (standard datasets)** makes it publication-grade: on the official CLINC150 and Banking77 splits, **HDC comes last on accuracy** (69–72% vs TF-IDF 81–83%, model2vec 80–86%, all-MiniLM 85–92%) **and first on latency** (~32 µs p50 vs MiniLM's ~2.9 ms). Even stdlib TF-IDF beats the HDC text encoder on real corpora. So NeuroVSA is the right tool where inputs are **bounded/canonical** and the value is **determinism, auditability, or no-dependency deployment** — not open-vocabulary language understanding. Full method and caveats: [`arena/README.md`](arena/README.md) · [`arena/ARENA_RESULTS.md`](arena/ARENA_RESULTS.md) · [`arena/ARENA_RESULTS_STANDARD.md`](arena/ARENA_RESULTS_STANDARD.md).
-
----
-
-## The flagship trio — RuleGarden, NeuroMesh & ProofRoute
-
-Those genuine strengths aren't abstract — they ship as three composed capabilities, built as
-**one product line, not three demos**. Every claim below is backed by a test, not a promise:
-
-| Capability | What it is | Why it's real |
-| :-- | :-- | :-- |
-| **RuleGarden** | A deterministic, teachable artificial-life world with glass-box VSA brains, running **entirely in a browser tab** (Go → WASM — no model file, no server). Teach a creature by example, transfer a lesson by analogy, forget it *exactly*. | A world **is** its `seed + event log`; the same pack replays to a **bit-identical world hash**, golden-tested in CI on Linux *and* macOS. |
-| **NeuroMesh** | The associative memory is a **CRDT**: merge two players' worlds and your creature absorbs every lesson, each keeping its **foreign site id** in the ledger — and forgetting propagates through the merge. | Commutativity, associativity, idempotence, and convergence under gossip interleavings are **property-tested** to bit-exact fingerprints. |
-| **ProofRoute** | Every decision can emit a **re-executable certificate** (state, ranked candidates, contributing lessons, memory fingerprint; optional ed25519 signature). Signed **lesson packs** carry a policy as a portable mini-replica. | Anyone holding the brain re-executes a receipt to **bit-for-bit agreement**; the `nvsa-verify` CLI re-runs a browser-issued receipt natively, and any tampering breaks *both* the signature and the re-execution. |
-
-RuleGarden is the flagship you can touch; **NeuroMesh** and **ProofRoute** are engine
-capabilities that power its headline verbs — *merge worlds*, *decision receipts* — and stand
-alone as library value. Every choice is labeled **lesson / generalization / instinct** (recall,
-analogy, or an honest shrug), with the causing lesson named.
-
-```bash
-sh web/rulegarden/build.sh && python3 -m http.server 8090 -d web/rulegarden
-# open http://localhost:8090 — teach a creature, forget the lesson, watch the numbers not lie
+./nvsa-check recommend \
+  -config arena/check-selection/chi-policy.json \
+  -fixture examples/check-selection/chi/middleware-change.json
 ```
 
-Full guide and measured limits (finite brain capacity, merge caveats): [`rulegarden/README.md`](rulegarden/README.md).
-
----
-
-## Highlights
-
-- **Zero external ML dependencies.** Pure-Go bitwise core; the only third-party import is `gorilla/websocket` for the optional API.
-- **Deterministic by default.** Token vectors derive from a seeded hash stream (`core.SeededHV`), so encodings are bit-identical across runs and machines — proven by committed golden vectors that CI verifies on both ubuntu and macos.
-- **Tiny & fast.** 1,256 bytes per vector; ~76 ns bind, ~43 ns Hamming, ~286 ns permute (word-level rotate), ~2.7 µs Bundle8 (bit-sliced majority), all zero-allocation.
-- **Instant learning — and exact unlearning.** Associative-memory writes are O(D) counter updates, independent of corpus size; `RemoveAssociation` exactly unlearns one stored association (an O(D) counter decrement — no retraining), leaving the memory bit-identical to never having stored it. Persistence uses `mmap`; `OpenReadOnly` loads only the vocab seed and materialized matrix into a small query-only object, skipping the tally and ledger.
-- **Glass-box tracing.** Every prediction and routing decision can return its derivation as data: the symbolic ops applied, a ranked candidate table with exact Hamming distances (the WebSocket returns up to five prompt candidates), and — when an exact ledger match exists — the matching stored association(s).
-
----
-
-## VSA math primitives
-
-| Operation | Symbol | Bitwise primitive | Notes |
-| :--- | :---: | :--- | :--- |
-| Binding | ⊗ | XOR (`^`) | Self-inverse: `A ⊗ B ⊗ B = A`. |
-| Permutation | ρ | Cyclic word-level rotate | Encodes sequence position; O(NumWords). |
-| Bundling | ⊕ | Majority vote | Superposition; preserves similarity to components. |
-| Similarity | d_H | `POPCNT` (`bits.OnesCount64`) | Hamming distance across 157 words. |
-
-## Benchmarks
-
-Measured on an Apple M5 Pro (`darwin/arm64`), zero allocations per op. Reproduce with `go test -bench . -benchmem ./...` — see [`BENCHMARKS.md`](BENCHMARKS.md).
-
-| Metric | Value | Context |
-| :--- | :--- | :--- |
-| Bind / Unbind (⊗) | ≈ 76 ns | XOR across `[157]uint64` |
-| Permutation (ρ) | ≈ 286 ns | word-level cyclic rotate |
-| Hamming distance | ≈ 43 ns | `POPCNT` across 157 words |
-| Agent tool routing | ≈ 1.03 µs | `SelectNextTool`: policy unbind + cleanup |
-| Memory per vector | 1,256 bytes | fixed `157 × 8`, no heap thrashing |
-
----
-
-## Quickstart
-
-**Prerequisites:** Go 1.22+, and Node 18+ only if you want the UI.
-
-```bash
-git clone https://github.com/JGautam09/NeuroVSA.git
-cd NeuroVSA
-
-go test ./...                 # run the suite
-go build -o neuro-vsa .       # build the API server
-./neuro-vsa                   # serves ws://localhost:8080/ws (loopback-only by default)
+```text
+Required: ci-matrix
+Optional: middleware-unit
+Rule middleware matched ["middleware/request_size_test.go"]
 ```
 
-Server flags: `-port` (default 8080), `-index-root` (directory the `/ast` indexer is confined to, default `.`), `-allow-all-origins` (off by default; loopback origins only).
+If a path is uncovered or Git history cannot be read, the CLI recommends the entire
+configured catalog. Repository policy owns required checks. Locally approved, signed packs
+can suggest extra optional checks; they cannot remove requirements or suppress fallback.
 
-**Terminal UI (optional):**
+- [Adopt it in another repo](examples/check-selection/chi/README.md): pinned real Git diff,
+  deliberate policy regression, and a report-only GitHub Actions example.
+- [CLI reference, receipts, packs, and MCP](docs/check-selection-replay.md): replay a decision,
+  restrict signing keys by repo and check ID, and call the evaluator from a local MCP client.
 
-```bash
-cd ui && npm install && npm run dev   # open http://localhost:3000
+## Open RuleGarden
+
+RuleGarden is a deterministic world with creatures you can **teach**, **inspect**,
+**forget**, and merge across exported worlds. **NeuroMesh** merges lesson ledgers and
+tombstones; **ProofRoute** records the chosen action and the evidence needed to re-execute it.
+
+```sh
+sh web/rulegarden/build.sh
+python3 -m http.server 8090 --bind 127.0.0.1 -d web/rulegarden
 ```
 
-Commands in the web terminal: a plain prompt like `func main` (autoregressive token generation), `/route fix_bug` (agent tool routing), `/ast .` (index Go files under the index root), and `/trace` (toggle glass-box mode — every result then shows its runners-up and any exact-match stored association).
-
-**Run the arena benchmark:**
-
-```bash
-go test ./arena/ -run TestArenaHDC -v          # HDC side
-python3 -m pip install model2vec               # neural side (or: sentence-transformers)
-python3 arena/neural_baseline.py
-go test ./arena/ -run TestArenaReport -v       # merge → arena/ARENA_RESULTS.md
-```
-
----
+Open [localhost:8090](http://localhost:8090). Place a creature and a predator, then
+select the creature to inspect its decision. Open **Check recommendation demo** to see
+a separate signed check pack update, conflict, or get revoked without changing the
+required check. The [RuleGarden guide](rulegarden/README.md) covers both kinds of
+receipts and the optional peer-to-peer features.
 
 ## Architecture
 
-```
-core/       VSA vector physics — bind/bundle/permute, POPCNT Hamming, seeded item memory
-parser/     Go AST → hypervector structural encoder
-engine/     CRDT associative memory (ledger + mmap + merge), decoder, router, certificates
-rulegarden/ Deterministic teachable world (headless core; wasm bridge in cmd/, page in web/)
-registry/   Static signed-pack registry (manifest + packs; publishing is a pull request)
-api/        Concurrent WebSocket server (per-connection agent state, loopback origin check)
-ui/         React 18 + Tailwind streaming terminal
-arena/      Honest HDC-vs-neural routing benchmark (Go + Python)
-cmd/        rulegarden-wasm bridge · nvsa-verify verifier · nvsa-pack registry publisher
+```mermaid
+flowchart TD
+    V["core: binary vectors and seeded encoding"] --> E["engine: associative memory, NeuroMesh, ProofRoute"]
+    V --> P["parser: Go AST encoding"]
+    E --> W["RuleGarden: simulation and Go WASM"]
+    E --> A["WebSocket API and terminal UI"]
+    P --> A
+    G["Git diff or change fixture"] --> S["checkselect: rules and full-suite fallback"]
+    T["Local policy and trusted signed packs"] --> S
+    S --> O["nvsa-check: required and optional check IDs"]
+    S --> M["Read-only MCP tools"]
+    S --> R["Replayable recommendation receipt"]
+    W --> D["RuleGarden: check-pack demo"]
+    S --> D
+    E -. "HDC, benchmark only" .-> B["Check-selection arena"]
+    S -. "Rules baseline" .-> B
 ```
 
-Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [developer guide](docs/developer_guide.md) · [user manual](docs/user_manual.md) · [engineering notes](docs/ENGINEERING_NOTES.md) (honest findings & lessons).
+The VSA engine binds vectors with XOR, bundles them by majority vote, rotates them to encode
+order, and compares them by Hamming distance. Each 10,000-bit vector uses 1,256 bytes of
+packed storage. Live check recommendations use explicit rules.
+Its HDC selector is an offline comparison, not part of live recommendations.
 
----
+[Architecture reference](docs/architecture.md) · [Developer guide](docs/developer_guide.md) ·
+[User manual](docs/user_manual.md) · [Signed RuleGarden pack registry](registry/README.md)
+
+## Benchmarks
+
+| Experiment | What the measurements show |
+| --- | --- |
+| [Check selection](arena/check-selection/RESULTS.md) | On 57 held-out labeled cases, explicit rules selected 143 check IDs vs. 288 for the full catalog and omitted no labeled required checks after fallback. HDC added no coverage and reached 83.3% optional precision, so it remains benchmark-only. |
+| [Text routing](arena/ARENA_RESULTS_STANDARD.md) | On CLINC150 and Banking77, HDC routed faster in the reported setup but trailed TF-IDF, model2vec, and all-MiniLM on accuracy. It is a better fit for bounded, structured inputs than free-form language. |
+| [Vector operations](BENCHMARKS.md) and [dimensionality](docs/DIMENSIONALITY.md) | Reproducible timings and capacity tradeoffs explain why the default remains 10,000 bits. |
 
 ## Honest limitations
 
-- **No semantic generalization.** The text encoder matches n-grams, not meaning; paraphrases of trained phrases are frequently misrouted (see the arena).
-- **Every baseline beats it on real-corpus accuracy** — on CLINC150/Banking77, HDC trails TF-IDF, model2vec, and all-MiniLM by 9–20 points (measured, arena v2). For open-vocabulary/voice routing, use an embedding model.
-- **Best fit is structured/symbolic input** — bounded command grammars, or the agent trajectory router (state + action history → next tool), where there is no language to embed.
-- **Research-grade.** APIs may change.
+- HDC matches structure, not semantic intent; use a semantic embedding model for
+  open-vocabulary routing.
+- Selecting fewer check IDs does **not** establish lower CI runtime or equal defect
+  detection. The benchmark measures agreement with labeled cases.
+- A check receipt replays a recommendation. It does not attest to Git provenance or
+  prove a check ran.
 
-## Roadmap
+## Build, test, and contribute
 
-The original roadmap is fully shipped; parked follow-ups and their un-park triggers live in
-[`docs/UPGRADE_PLAN.md`](docs/UPGRADE_PLAN.md).
+```sh
+go test -race ./...
+go vet ./...
+go build ./...
+```
 
-**Shipped:** the AST encoder v2 (role–filler encoding of parameter/return *types*,
-statement kinds, and control flow) landed in v0.7.0 and is the server default
-(`-ast-encoder 2`; `1` keeps the legacy names-only encoder) — measured against v1 in
-[`BENCHMARKS.md`](BENCHMARKS.md). The bit-sliced `Bundle` (the last non-word-level
-primitive) landed in v0.9.0: 35.4 µs → 2.7 µs for Bundle8, measured back-to-back, output
-bit-identical to the naive definition (differential + fuzz enforced). Arena v2 landed in
-v0.10.0: CLINC150 + Banking77 with TF-IDF, model2vec, and all-MiniLM baselines —
-[`arena/ARENA_RESULTS_STANDARD.md`](arena/ARENA_RESULTS_STANDARD.md). The dimensionality
-study also landed in v0.10.0 ([`docs/DIMENSIONALITY.md`](docs/DIMENSIONALITY.md)) — and
-the "typically oversized at 10,000 bits" hypothesis **did not survive measurement** for
-this encoder: dropping to 4,096 bits costs 1.4–2.4 accuracy points on the standard
-datasets and halves the 100%-recall capacity ceiling (K=256 → K=128), while op cost
-scales linearly with D/64. 10,000 stays the default on data, not tradition.
-
-## Contributing & security
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md). Issues and PRs welcome.
+For the optional terminal UI, see the [server and UI setup](docs/user_manual.md).
+For patches, fork the repo and open a pull request; see [Contributing](CONTRIBUTING.md)
+for the workflow and [Security](SECURITY.md) for private reporting. See the
+[changelog](CHANGELOG.md) for released and unreleased changes. This is a research toolkit:
+interfaces may change and the new check-selection features should start in report-only mode.
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](LICENSE). Copyright 2026 Jitendra Gautam.
+[Apache License 2.0](LICENSE). Copyright 2026 Jitendra Gautam.

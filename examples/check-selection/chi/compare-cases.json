@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "middleware-change", "split": "holdout",
+      "changes": [{"status": "A", "path": "middleware/request_size_test.go"}],
+      "expected": {"required": ["ci-matrix"], "optional": ["middleware-unit"], "forbidden": ["router-unit"]},
+      "reason": "A focused middleware run gives feedback for the changed middleware test. The full CI matrix is still required."
+    },
+    {
+      "id": "unrelated-router", "split": "holdout",
+      "changes": [{"status": "M", "path": "mux.go"}],
+      "expected": {"required": ["ci-matrix"], "optional": ["router-unit"], "forbidden": ["middleware-unit"]},
+      "reason": "A router change keeps the router suggestion independent of the middleware rule."
+    }
+  ]
+}

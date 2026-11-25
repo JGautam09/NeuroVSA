@@ -38,6 +38,17 @@ Every decision carries a **basis**:
   analogical source named — not hidden;
 - **instinct** — nothing matched (margin at the noise floor); the creature wanders.
 
+## Check recommendation demo
+
+Open **Check recommendation demo** in the inspector to compare a signed pack's initial
+version, newer revision, conflicting revisions, and revocation. The sample policy always
+keeps `unit-suite` required; only its optional suggestions change. **Download check
+receipt** saves a replay file for `nvsa-check verify -file check-recommendation.json`.
+
+This is separate from the creature's signed ProofRoute certificate and the world pack
+registry below. The demo uses a public sample key, has no network dependency, and does
+not access your repository or world. See the [check-selection reference](../docs/check-selection-replay.md).
+
 ## The pack registry (opt-in)
 
 The page's **Pack registry** panel browses a [static, GitHub-native registry](../registry/)

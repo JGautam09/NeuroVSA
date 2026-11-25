@@ -1,0 +1,49 @@
+name: Test selection report
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    if: ${{ vars.NVSA_CHECK_REF != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          path: project
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: JGautam09/NeuroVSA
+          ref: ${{ vars.NVSA_CHECK_REF }}
+          path: selector
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26'
+          cache: false
+      - name: Build selector
+        working-directory: selector
+        run: go build -o "$RUNNER_TEMP/nvsa-check" ./cmd/nvsa-check
+      - name: Report recommendations
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if git -C project show "$BASE_SHA:nvsa-check.json" > "$RUNNER_TEMP/check-policy.json" &&
+            "$RUNNER_TEMP/nvsa-check" recommend -repo project -base "$BASE_SHA" -head "$HEAD_SHA" \
+              -config "$RUNNER_TEMP/check-policy.json" -format json > "$RUNNER_TEMP/check-report.json" &&
+            jq -r '
+              "## Test selection",
+              "Required: " + (.required | join(", ")),
+              "Optional: " + (.optional | join(", ")),
+              (if .fallback then "Full suite: " + .fallback else empty end)
+            ' "$RUNNER_TEMP/check-report.json" > "$RUNNER_TEMP/check-summary.md"; then
+            cp "$RUNNER_TEMP/check-summary.md" "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' 'Test selection was unavailable. Use the regular CI suite.' >> "$GITHUB_STEP_SUMMARY"
+          fi

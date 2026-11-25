@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "scope": "go-chi/chi",
+  "name": "middleware-checks",
+  "revision": "2",
+  "revoked": true
+}

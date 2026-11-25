@@ -1,5 +1,10 @@
 # NeuroVSA User Manual & API Guide
 
+This guide covers the WebSocket API and web terminal. For repository check recommendations,
+start with the [go-chi quickstart](../examples/check-selection/chi/README.md) or use the
+[CLI and MCP reference](check-selection-replay.md). For the standalone browser simulation,
+see the [RuleGarden guide](../rulegarden/README.md).
+
 > For what NeuroVSA is good at — and where a small embedding router beats it — see the
 > [main README](../README.md#honest-limitations) and the benchmark in [`arena/`](../arena/).
 

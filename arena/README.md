@@ -1,5 +1,9 @@
 # The Arena — HDC vs. Neural Router (structured routing)
 
+This page describes text and command routing. For a separate report-only CI experiment,
+see the [test-selection benchmark](check-selection/RESULTS.md), which compares full-suite,
+rules, nearest-example, and experimental HDC selectors on labeled repository changes.
+
 A head-to-head, apples-to-apples benchmark. **Both** routers are the *same* prototype /
 nearest-centroid classifier; the **only** variable is the representation — NeuroVSA HDC
 hypervectors vs. neural embeddings. It measures where the deterministic HDC router genuinely
