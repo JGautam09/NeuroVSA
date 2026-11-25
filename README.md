@@ -23,12 +23,16 @@ To keep the claims honest, the repo ships [**the arena**](arena/) — a head-to-
 | :--- | :--- | :--- | :--- |
 | Canonical-phrasing accuracy | 100% | 100% | tie |
 | **Paraphrase accuracy** | **37.8%** | **64.4%** | **Neural** |
-| Latency p50 (encode + route) | 168.1 µs | 25.0 µs | Neural |
-| Cold-add a new class | 1,172 µs | 206 µs | Neural |
+| Latency p50 (encode + route) | 15.9 µs | 25.0 µs | HDC¹ |
+| Cold-add a new class | 94 µs | 206 µs | HDC¹ |
 | **Bit-exact & portable prototypes** | **yes** | no | **HDC** |
 | **Model artifact required** | **none (~KB of Go)** | yes (downloaded model) | **HDC** |
 
-**Read it straight:** a small semantic embedding router beats HDC on paraphrase understanding, raw latency, and cold-add for this task. HDC's genuine wins are **bit-exact cross-machine determinism** and **zero model artifact**. So NeuroVSA is the right tool where inputs are **bounded/canonical** and the value is **determinism, auditability, or no-dependency deployment** — not open-vocabulary language understanding. Full method and caveats: [`arena/README.md`](arena/README.md) · [`arena/ARENA_RESULTS.md`](arena/ARENA_RESULTS.md).
+¹ HDC side re-measured after the v0.9.0 bit-sliced `Bundle` (13× on the encode's dominant
+op, same-session before/after); the neural column is the prior committed run on the same
+machine. Both sides get re-measured together in the arena-v2 rerun.
+
+**Read it straight:** a small semantic embedding router beats HDC decisively on paraphrase understanding — the axis that matters for language — and that conclusion is unchanged. The bit-sliced Bundle moved the raw latency and cold-add axes to HDC on this machine's measurements (caveat above). HDC's structural wins remain **bit-exact cross-machine determinism** and **zero model artifact**. So NeuroVSA is the right tool where inputs are **bounded/canonical** and the value is **determinism, auditability, or no-dependency deployment** — not open-vocabulary language understanding. Full method and caveats: [`arena/README.md`](arena/README.md) · [`arena/ARENA_RESULTS.md`](arena/ARENA_RESULTS.md).
 
 ---
 
@@ -61,7 +65,7 @@ Full guide and measured limits (finite brain capacity, merge caveats): [`rulegar
 
 - **Zero external ML dependencies.** Pure-Go bitwise core; the only third-party import is `gorilla/websocket` for the optional API.
 - **Deterministic by default.** Token vectors derive from a seeded hash stream (`core.SeededHV`), so encodings are bit-identical across runs and machines — proven by committed golden vectors that CI verifies on both ubuntu and macos.
-- **Tiny & fast.** 1,256 bytes per vector; ~76 ns bind, ~43 ns Hamming, ~286 ns permute (word-level rotate), all zero-allocation.
+- **Tiny & fast.** 1,256 bytes per vector; ~76 ns bind, ~43 ns Hamming, ~286 ns permute (word-level rotate), ~2.7 µs Bundle8 (bit-sliced majority), all zero-allocation.
 - **Instant learning — and exact unlearning.** Associative-memory writes are O(D) counter updates, independent of corpus size; `RemoveAssociation` exactly unlearns one stored association (an O(D) counter decrement — no retraining), leaving the memory bit-identical to never having stored it. Persistence uses `mmap`; `OpenReadOnly` loads only the vocab seed and materialized matrix into a small query-only object, skipping the tally and ledger.
 - **Glass-box tracing.** Every prediction and routing decision can return its derivation as data: the symbolic ops applied, a ranked candidate table with exact Hamming distances (the WebSocket returns up to five prompt candidates), and — when an exact ledger match exists — the matching stored association(s).
 
@@ -151,14 +155,15 @@ Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [develope
 
 ## Roadmap
 
-- Bit-sliced `Bundle` (the last non-word-level primitive) to cut encode latency.
 - Arena on standard datasets (CLINC150 / Banking77) and a full-MiniLM baseline.
 - Optional dimensionality reduction (HDC models are typically oversized at 10,000 bits).
 
 **Shipped since the original roadmap:** the AST encoder v2 (role–filler encoding of
 parameter/return *types*, statement kinds, and control flow) landed in v0.7.0 and is the
 server default (`-ast-encoder 2`; `1` keeps the legacy names-only encoder) — measured against
-v1 in [`BENCHMARKS.md`](BENCHMARKS.md).
+v1 in [`BENCHMARKS.md`](BENCHMARKS.md). The bit-sliced `Bundle` (the last non-word-level
+primitive) landed in v0.9.0: 35.4 µs → 2.7 µs for Bundle8, measured back-to-back, output
+bit-identical to the naive definition (differential + fuzz enforced).
 
 ## Contributing & security
 
