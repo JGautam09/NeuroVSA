@@ -1,5 +1,7 @@
 # Structured-Routing Arena — Results
 
+> Historical run. For the current paired analysis, see [the routing benchmark refresh](routing-refresh/RESULTS.md).
+
 Same dataset (15 intents), same nearest-centroid routing algorithm. The **only** difference is
 the representation: NeuroVSA HDC hypervectors vs. neural embeddings (`neural (model2vec potion-base-8M, static CPU)`). Both measured
 on the same machine. Regenerate with the steps in [README.md](README.md).

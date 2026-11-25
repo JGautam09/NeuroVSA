@@ -1,5 +1,7 @@
 # Arena v2 — Standard Datasets
 
+> Historical run, including TF-IDF and MiniLM. For fresh paired NeuroVSA and Model2Vec measurements, see [the routing benchmark refresh](routing-refresh/RESULTS.md).
+
 Official train/test splits of CLINC150 (150 intents, + 1000 out-of-scope test queries)
 and Banking77 (77 intents), fetched and converted by [datasets/fetch.py](datasets/fetch.py)
 (SHA-256-pinned; licenses noted there). Same nearest-centroid protocol for every router —
