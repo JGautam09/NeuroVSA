@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Experimental `nvsa-check` CLI for report-only test recommendations, policy comparisons,
+  and a reproducible [offline benchmark](arena/check-selection/RESULTS.md).
+- Replayable recommendation receipts, signed optional-check packs with revocation,
+  read-only stdio MCP, and a RuleGarden check-pack demo.
+- [go-chi quickstart](examples/check-selection/chi/README.md) with a pinned Git example
+  and a GitHub Actions job-summary template that leaves existing CI jobs intact.
+
+### Evaluation
+
+- HDC remains benchmark-only: on the held-out corpus it added no correct suggestion
+  coverage above rules and reached 83.3% optional precision.
+
 ## [0.8.1] — 2026-07-24 "Hardened"
 
 Security & correctness hardening from an external review (2×P0, 5×P1, 2×P2 — all verified

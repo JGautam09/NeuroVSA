@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "scope": "go-chi/chi",
+  "name": "middleware-checks",
+  "revision": "1",
+  "examples": [
+    {
+      "id": "request-size-test",
+      "changes": [{"status": "A", "path": "middleware/request_size_test.go"}],
+      "optional": ["middleware-unit"]
+    }
+  ]
+}

@@ -32,6 +32,12 @@ go test -bench . ./...   # benchmarks
 Run `gofmt -w .` and `go test -race ./...` before opening a PR — CI enforces both, plus a
 cross-compile of the build-tagged `mmap` files for linux/darwin/windows.
 
+For check-selection changes, also run the [go-chi quickstart](examples/check-selection/chi/README.md)
+and the [offline benchmark](arena/check-selection/RESULTS.md#reproduce). A new benchmark
+case should include its provenance, expected checks, and a reason for the label.
+For RuleGarden changes, build the WASM and exercise the affected browser interaction.
+Do not commit key backups, local plans, or receipts containing private repository paths.
+
 ## Running the arena benchmark
 
 The arena (`arena/`) is a head-to-head HDC-vs-neural routing benchmark.

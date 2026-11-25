@@ -17,6 +17,7 @@ import (
 
 	"github.com/JGautam09/NeuroVSA/core"
 	"github.com/JGautam09/NeuroVSA/engine"
+	"github.com/JGautam09/NeuroVSA/internal/checkselect"
 	"github.com/JGautam09/NeuroVSA/rulegarden"
 )
 
@@ -107,6 +108,10 @@ type lessonView struct {
 
 func main() {
 	api := map[string]any{
+		"checkPackDemo": js.FuncOf(func(this js.Value, args []js.Value) any {
+			data, err := checkselect.PackDemo()
+			return reply(data, err)
+		}),
 		// newWorld(seedString) — fresh world from a seed.
 		"newWorld": js.FuncOf(func(this js.Value, args []js.Value) any {
 			seed, err := strconv.ParseUint(args[0].String(), 10, 64)

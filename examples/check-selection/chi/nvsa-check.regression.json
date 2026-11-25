@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "scope": "go-chi/chi",
+  "checks": ["ci-matrix", "router-unit", "middleware-unit", "examples-build"],
+  "always": ["ci-matrix"],
+  "rules": [
+    {"id": "router", "paths": ["*.go"], "optional": ["router-unit"]},
+    {"id": "middleware", "paths": ["middleware/**"], "optional": ["router-unit"]},
+    {"id": "examples", "paths": ["_examples/**"], "required": ["examples-build"]},
+    {"id": "build-config", "paths": ["Makefile", "go.mod", "go.sum", ".github/workflows/**"], "required": ["examples-build"]},
+    {"id": "metadata", "paths": ["*.md", "LICENSE", ".gitignore", ".github/FUNDING.yml", "docs/**", "testdata/**"]}
+  ]
+}

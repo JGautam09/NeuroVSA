@@ -2,12 +2,16 @@
 
 ## 1. Codebase Overview & Package Contracts
 
-NeuroVSA is designed around modular, decoupled Go packages operating strictly on stack-allocated bit arrays without dynamic heap overhead inside critical inner loops.
+NeuroVSA uses fixed-size bit arrays for vector operations and separate packages for memory, application interfaces, and benchmark tooling. See [architecture](architecture.md) for how they fit together.
 
 ```
 core/        ──> Pure VSA Vector Physics & Math Primitives
 parser/      ──> Language AST Tree-to-Hypervector Encoders
-engine/      ──> Associative Memory, HDC Decoder, Agent Trajectory Router
+engine/      ──> Associative memory, HDC decoder, trajectory router, ProofRoute
+rulegarden/  ──> Headless world simulation; Go/WASM bridge in cmd/rulegarden-wasm/
+web/rulegarden/ ──> Standalone RuleGarden page and browser checks
+internal/checkselect/ ──> Policies, fixtures, signed packs, receipts, local MCP
+cmd/nvsa-check/ ──> Check-selection CLI
 api/         ──> Concurrent WebSocket Server & JSON Protocol Handlers
 ui/          ──> React 18 + Tailwind CSS Streaming Frontend
 ```
@@ -99,3 +103,19 @@ To benchmark hypervector operations per second:
 ```bash
 go test -bench=. -benchmem ./...
 ```
+
+### Check selection and RuleGarden
+
+```sh
+go test -race ./internal/checkselect ./cmd/nvsa-check
+go run ./cmd/nvsa-check bench -corpus arena/check-selection/corpus.json -repeat 200
+node web/rulegarden/security.test.mjs
+sh web/rulegarden/build.sh
+```
+
+When changing a selector, add a labeled case with baseline and expected behavior.
+Do not train HDC on holdout cases or change the fixed split to improve a result.
+For adapter changes, verify that the same structured change and prepared snapshot
+produce matching results. For a new signed field, update the versioned signing format
+and add a verifier regression test. See the [benchmark report](../arena/check-selection/RESULTS.md)
+and the [CLI and file-format reference](check-selection-replay.md).

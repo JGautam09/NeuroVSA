@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "checks": ["go-race", "cross-compile", "go-min-version", "web-build", "rulegarden-web", "arena", "registry", "api-focused"],
+  "always": ["go-race", "cross-compile"],
+  "rules": [
+    {"id": "api", "paths": ["api/**"], "optional": ["api-focused"]},
+    {"id": "go-source", "paths": ["*.go", "core/**", "engine/**", "parser/**", "cmd/**", "rulegarden/**"]},
+    {"id": "go-compatibility", "paths": ["go.mod", "go.sum", ".github/workflows/**"], "required": ["go-min-version", "web-build", "rulegarden-web"]},
+    {"id": "terminal-ui", "paths": ["ui/**"], "required": ["web-build"]},
+    {"id": "garden-browser", "paths": ["web/**", "cmd/rulegarden-wasm/**"], "required": ["rulegarden-web"]},
+    {"id": "benchmark", "paths": ["arena/**", "scripts/**"], "required": ["arena"]},
+    {"id": "pack-registry", "paths": ["registry/**", "cmd/nvsa-pack/**"], "required": ["registry"]},
+    {"id": "metadata", "paths": ["*.md", "docs/**", "LICENSE", "NOTICE", ".gitignore", ".github/ISSUE_TEMPLATE/**", ".github/PULL_REQUEST_TEMPLATE.md"]}
+  ]
+}

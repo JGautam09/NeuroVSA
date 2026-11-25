@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "projects": [
+    {"id": "neurovsa", "policy": "neurovsa-policy.json", "suite": "neurovsa-cases.json"},
+    {"id": "go-chi", "policy": "chi-policy.json", "suite": "chi-cases.json"}
+  ]
+}
