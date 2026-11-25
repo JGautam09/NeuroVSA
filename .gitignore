@@ -49,3 +49,7 @@ web/rulegarden/wasm_exec.js
 # Root-level Go build artifacts (anchored so they don't match the cmd/ source dirs).
 /rulegarden-wasm
 /nvsa-verify
+
+# Claude Code project tooling: launch.json (preview server config) is shared and
+# committed; user-local settings never are.
+.claude/settings.local.json
