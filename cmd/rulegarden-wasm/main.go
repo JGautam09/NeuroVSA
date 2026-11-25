@@ -92,7 +92,13 @@ func state() any {
 	for _, c := range world.Creatures {
 		cv := creatureView{ID: c.ID, X: c.X, Y: c.Y, Decision: c.LastDecision}
 		for _, rec := range c.Brain.Lessons() {
-			cv.Lessons = append(cv.Lessons, lessonView{ID: rec.ID.String(), Label: rec.Label, Removed: rec.Removed})
+			lv := lessonView{ID: rec.ID.String(), Label: rec.Label, Removed: rec.Removed}
+			// Verified meaning comes from the sem record; the label is display-only. The UI
+			// renders lv.Percept/lv.Action as the lesson and flags legacy (label-only) entries.
+			if pr := rulegarden.ProvenanceOf(rec); pr.Structured {
+				lv.Structured, lv.Percept, lv.Action, lv.Parent = true, pr.Percept, pr.Action, pr.Parent
+			}
+			cv.Lessons = append(cv.Lessons, lv)
 		}
 		v.Creatures = append(v.Creatures, cv)
 	}
@@ -103,6 +109,11 @@ type lessonView struct {
 	ID      string `json:"id"`
 	Label   string `json:"label"`
 	Removed bool   `json:"removed"`
+	// Provenance (from the machine-verified sem record; see rulegarden.ProvenanceOf).
+	Structured bool   `json:"structured"`
+	Percept    string `json:"percept,omitempty"`
+	Action     string `json:"action,omitempty"`
+	Parent     string `json:"parent,omitempty"`
 }
 
 func main() {
@@ -328,10 +339,20 @@ func main() {
 			if err := json.Unmarshal([]byte(args[0].String()), &p); err != nil {
 				return reply(nil, fmt.Errorf("invalid lesson pack: %w", err))
 			}
+			structured := 0
+			for i := range p.Entries {
+				if p.Entries[i].Sem != "" {
+					structured++
+				}
+			}
 			info := map[string]any{
 				"signed":  len(p.Signature) > 0,
 				"entries": len(p.Entries),
 				"site":    strconv.FormatUint(p.Site, 10),
+				// Structured entries carry machine-verified semantics; legacy ones will
+				// import (label-validated) but refuse transfer. The trust prompt shows both.
+				"structured_entries": structured,
+				"legacy_entries":     len(p.Entries) - structured,
 			}
 			if len(p.Signature) > 0 {
 				info["valid"] = p.VerifySignature()

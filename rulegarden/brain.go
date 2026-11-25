@@ -59,7 +59,9 @@ func NewBrain(v *Vocab) *Brain {
 // Epoch returns the brain's mutation counter (changes only on teach/transfer/forget/merge).
 func (b *Brain) Epoch() uint64 { return b.epoch }
 
-// Teach stores one lesson (one-shot — no training loop) and returns its ledger id.
+// Teach stores one lesson (one-shot — no training loop) and returns its ledger id. The
+// lesson's machine-readable meaning goes into the sem field (signed in packs, checked at
+// import); the label is a human-readable rendering of the same thing.
 func (b *Brain) Teach(p PerceptSpec, action string) (engine.AssociationID, error) {
 	if err := ValidPercept(p); err != nil {
 		return engine.AssociationID{}, err
@@ -70,12 +72,14 @@ func (b *Brain) Teach(p PerceptSpec, action string) (engine.AssociationID, error
 	}
 	label := fmt.Sprintf("%s → %s", p, action)
 	b.epoch++
-	return b.mem.StoreLabeled(b.vocab.EncodePercept(p), actHV, label), nil
+	return b.mem.StoreSemantic(b.vocab.EncodePercept(p), actHV, label, EncodeLessonSem(p, action, "")), nil
 }
 
 // Transfer is the analogy verb: it derives a NEW lesson from an existing one by substituting
 // the percept's subject (e.g. predator→guard), preserving every other role binding. The
-// lesson's label records its parent, so lineage is visible in the ledger.
+// source lesson's meaning comes from its sem record — never parsed out of the display label
+// (the P1-4 structural fix) — and the new lesson's sem records its parent, so lineage is
+// data, not label decoration.
 //
 // Implementation note (honesty over cleverness): the new percept is re-encoded from the
 // substituted symbols rather than XOR-patched into the stored bound pair — Bundle is a
@@ -88,25 +92,29 @@ func (b *Brain) Transfer(lesson engine.AssociationID, newSees string) (engine.As
 	if err != nil {
 		return zero, err
 	}
-	p, action, err := parseLessonLabel(rec.Label)
-	if err != nil {
-		return zero, err
+	if rec.Sem == "" {
+		return zero, fmt.Errorf("lesson %s predates structured semantics (imported from a legacy pack) — re-teach it to enable transfer", lesson)
 	}
-	if p.Sees == SeesNothing {
+	ls, err := ParseLessonSem(rec.Sem)
+	if err != nil {
+		return zero, fmt.Errorf("lesson %s: %w", lesson, err)
+	}
+	if ls.Percept.Sees == SeesNothing {
 		return zero, fmt.Errorf("lesson %s has no substitutable subject", lesson)
 	}
-	oldSees := p.Sees
+	oldSees := ls.Percept.Sees
+	p := ls.Percept
 	p.Sees = newSees
 	if err := ValidPercept(p); err != nil {
 		return zero, err
 	}
-	actHV, err := b.vocab.ActionHV(action)
+	actHV, err := b.vocab.ActionHV(ls.Action)
 	if err != nil {
 		return zero, err
 	}
-	label := fmt.Sprintf("%s → %s (from lesson %s: %s→%s)", p, action, lesson, oldSees, newSees)
+	label := fmt.Sprintf("%s → %s (from lesson %s: %s→%s)", p, ls.Action, lesson, oldSees, newSees)
 	b.epoch++
-	return b.mem.StoreLabeled(b.vocab.EncodePercept(p), actHV, label), nil
+	return b.mem.StoreSemantic(b.vocab.EncodePercept(p), actHV, label, EncodeLessonSem(p, ls.Action, lesson.String())), nil
 }
 
 // Forget exactly unlearns one lesson: the memory becomes bit-identical to never having
@@ -205,8 +213,12 @@ func (b *Brain) findLesson(id engine.AssociationID) (engine.AssociationRecord, e
 }
 
 // parseLessonLabel recovers the symbolic percept and action from a lesson label of the form
-// "sees:<kind>,<dist>,<dir> → <action>" (transfer suffixes are ignored). Labels are the
-// symbolic source of truth for transfers, so the format is deliberately rigid.
+// "sees:<kind>,<dist>,<dir> → <action>" (transfer suffixes are ignored). Since the sem field
+// became the machine-readable source of truth (v0.9.0), this parser serves only LEGACY
+// pre-sem packs — validating that a legacy entry's vector matches its label (the v0.8.1
+// rule) and checking that a semantic-LOOKING label on a sem-carrying entry does not
+// contradict the verified sem (display spoof guard). New code never derives meaning from a
+// label.
 func parseLessonLabel(label string) (PerceptSpec, string, error) {
 	var p PerceptSpec
 	var rest string

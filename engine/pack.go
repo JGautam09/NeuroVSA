@@ -29,10 +29,13 @@ type Pack struct {
 }
 
 // PackEntry is one association: its sequence under the pack's site, its human-readable
-// label, and the bound vector (context ⊗ target) it contributes to the memory.
+// label, its optional machine-readable semantics record, and the bound vector
+// (context ⊗ target) it contributes to the memory. Sem is what import validation checks
+// against Bound (see rulegarden's validateLessonPackContent) — the label is display-only.
 type PackEntry struct {
 	Seq   uint64           `json:"seq"`
 	Label string           `json:"label"`
+	Sem   string           `json:"sem,omitempty"`
 	Bound core.Hypervector `json:"-"` // hex in JSON (see marshalers)
 }
 
@@ -47,7 +50,7 @@ func PackFromMemory(name string, mem *AssociativeMemory) Pack {
 		if e.removed {
 			continue
 		}
-		p.Entries = append(p.Entries, PackEntry{Seq: e.id.Seq, Label: e.label, Bound: e.bound})
+		p.Entries = append(p.Entries, PackEntry{Seq: e.id.Seq, Label: e.label, Sem: e.sem, Bound: e.bound})
 	}
 	return p
 }
@@ -75,7 +78,7 @@ func PacksFromMemory(name string, mem *AssociativeMemory) []Pack {
 			bySite[e.id.Site] = p
 			order = append(order, e.id.Site)
 		}
-		p.Entries = append(p.Entries, PackEntry{Seq: e.id.Seq, Label: e.label, Bound: e.bound})
+		p.Entries = append(p.Entries, PackEntry{Seq: e.id.Seq, Label: e.label, Sem: e.sem, Bound: e.bound})
 	}
 	packs := make([]Pack, 0, len(order))
 	for _, s := range order {
@@ -95,6 +98,9 @@ func (p *Pack) Memory() (*AssociativeMemory, error) {
 		if len(e.Label) > maxLabelLen {
 			return nil, fmt.Errorf("pack %q entry seq %d has a %d-byte label exceeding the %d-byte limit", p.Name, e.Seq, len(e.Label), maxLabelLen)
 		}
+		if len(e.Sem) > MaxSemLen {
+			return nil, fmt.Errorf("pack %q entry seq %d has a %d-byte sem exceeding the %d-byte limit", p.Name, e.Seq, len(e.Sem), MaxSemLen)
+		}
 		if err := e.Bound.ValidateCanonical(); err != nil {
 			return nil, fmt.Errorf("pack %q entry seq %d: %w", p.Name, e.Seq, err)
 		}
@@ -103,7 +109,7 @@ func (p *Pack) Memory() (*AssociativeMemory, error) {
 			return nil, fmt.Errorf("pack %q has duplicate entry seq %d", p.Name, e.Seq)
 		}
 		m.index[id] = len(m.ledger)
-		m.ledger = append(m.ledger, ledgerEntry{id: id, label: e.Label, bound: e.Bound})
+		m.ledger = append(m.ledger, ledgerEntry{id: id, label: e.Label, sem: e.Sem, bound: e.Bound})
 		m.addBits(e.Bound)
 		m.total++
 		if e.Seq > maxSeq {
@@ -154,10 +160,28 @@ func (p *Pack) VerifySignature() bool {
 }
 
 // CanonicalBytes is the deterministic binary encoding signatures cover (PublicKey and
-// Signature excluded).
+// Signature excluded). Two formats, selected by content: a pack whose entries carry no
+// sem encodes exactly as it always has ("NVSA-PACK1"), so every signature issued before
+// the sem field existed keeps verifying; any entry with a sem switches the whole pack to
+// "NVSA-PACK2", which writes a sem string per entry. The format tag is itself inside the
+// signed bytes, so a v2 pack stripped of its sems (or a v1 pack with sems injected)
+// re-canonicalizes as the OTHER format and fails its signature — the two forms cannot
+// alias each other.
 func (p *Pack) CanonicalBytes() []byte {
+	withSem := false
+	for i := range p.Entries {
+		if p.Entries[i].Sem != "" {
+			withSem = true
+			break
+		}
+	}
+
 	var b bytes.Buffer
-	b.WriteString("NVSA-PACK1")
+	if withSem {
+		b.WriteString("NVSA-PACK2")
+	} else {
+		b.WriteString("NVSA-PACK1")
+	}
 	writeStr := func(s string) {
 		var l [4]byte
 		binary.LittleEndian.PutUint32(l[:], uint32(len(s)))
@@ -177,6 +201,9 @@ func (p *Pack) CanonicalBytes() []byte {
 	for _, e := range p.Entries {
 		writeU64(e.Seq)
 		writeStr(e.Label)
+		if withSem {
+			writeStr(e.Sem)
+		}
 		for i := 0; i < core.NumWords; i++ {
 			writeU64(e.Bound.Vector[i])
 		}
@@ -222,11 +249,12 @@ func (p *Pack) UnmarshalJSON(data []byte) error {
 type packEntryJSON struct {
 	Seq      core.QuotedU64 `json:"seq"`
 	Label    string         `json:"label"`
+	Sem      string         `json:"sem,omitempty"`
 	BoundHex string         `json:"bound_hex"`
 }
 
 func (e PackEntry) MarshalJSON() ([]byte, error) {
-	return json.Marshal(packEntryJSON{Seq: core.QuotedU64(e.Seq), Label: e.Label, BoundHex: hvToHex(e.Bound)})
+	return json.Marshal(packEntryJSON{Seq: core.QuotedU64(e.Seq), Label: e.Label, Sem: e.Sem, BoundHex: hvToHex(e.Bound)})
 }
 
 func (e *PackEntry) UnmarshalJSON(data []byte) error {
@@ -238,6 +266,6 @@ func (e *PackEntry) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("bound_hex: %w", err)
 	}
-	e.Seq, e.Label, e.Bound = uint64(j.Seq), j.Label, hv
+	e.Seq, e.Label, e.Sem, e.Bound = uint64(j.Seq), j.Label, j.Sem, hv
 	return nil
 }

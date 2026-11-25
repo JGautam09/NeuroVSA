@@ -489,14 +489,39 @@ func validLessonPack(p *engine.Pack) error {
 	return nil
 }
 
-// validateLessonPackContent verifies every entry's bound vector matches the percept/action
-// its label claims (bound == EncodePercept(percept) ⊗ ActionHV(action)), re-deriving the
-// expected vector from the symbolic label. A RuleGarden lesson's label IS its machine-
-// readable meaning (Transfer parses it), so an imported label that disagrees with its vector
-// is rejected — a signature over inconsistent (label, vector) pairs is not evidence the
-// label explains the vector.
+// validateLessonPackContent verifies every entry's bound vector against its MACHINE-READABLE
+// meaning — a signature proves WHO signed a pack; this check proves the pack's claimed
+// meaning matches its vectors.
+//
+// Entries carrying a structured sem (the post-P1-4 form) must satisfy
+// bound == EncodePercept(sem.percept) ⊗ ActionHV(sem.action); and if their display label
+// ALSO parses as a lesson label, it must agree with the sem — so a "looks semantic" label
+// cannot spoof a different meaning next to valid semantics (free-text labels are fine, they
+// are display-only). Legacy entries (no sem) fall back to the v0.8.1 rule: the label is the
+// meaning, so the vector must match the parsed label; such lessons import as legacy —
+// Transfer refuses them.
 func (w *World) validateLessonPackContent(p *engine.Pack) error {
 	for _, e := range p.Entries {
+		if e.Sem != "" {
+			ls, err := ParseLessonSem(e.Sem)
+			if err != nil {
+				return fmt.Errorf("lesson pack entry seq %d: %w", e.Seq, err)
+			}
+			actHV, err := w.Vocab.ActionHV(ls.Action)
+			if err != nil {
+				return fmt.Errorf("lesson pack entry seq %d: %w", e.Seq, err)
+			}
+			if want := w.Vocab.EncodePercept(ls.Percept).Bind(actHV); want != e.Bound {
+				return fmt.Errorf("lesson pack entry seq %d: bound vector contradicts its sem (forged semantics/vector pair)", e.Seq)
+			}
+			if lp, la, err := parseLessonLabel(e.Label); err == nil {
+				if lp != ls.Percept || la != ls.Action {
+					return fmt.Errorf("lesson pack entry seq %d: label %q contradicts the entry's verified semantics (%s → %s)", e.Seq, e.Label, ls.Percept, ls.Action)
+				}
+			}
+			continue
+		}
+
 		percept, action, err := parseLessonLabel(e.Label)
 		if err != nil {
 			return fmt.Errorf("lesson pack entry seq %d: label %q is not a valid RuleGarden lesson", e.Seq, e.Label)

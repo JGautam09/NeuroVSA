@@ -10,7 +10,7 @@ import (
 	"github.com/JGautam09/NeuroVSA/core"
 )
 
-// On-disk format (v3). The file is a fixed header + counters + matrix, followed by a
+// On-disk format (v4). The file is a fixed header + counters + matrix, followed by a
 // variable-length association ledger in canonical (site, seq) order:
 //
 //	[0:4]    magic "NVSA"
@@ -24,19 +24,27 @@ import (
 //	[40 .. +countsBytes)  counts[Dimension] (uint32 LE) — the per-bit vote tally
 //	[.. +matrixBytes)     matrix[NumWords]  (uint64 LE) — materialized majority vector
 //	[..]     ledgerCount (uint32), then per entry:
-//	         site (u64) · seq (u64) · removed (u8) · labelLen (u16) · label bytes · bound[NumWords] (u64 LE)
+//	         site (u64) · seq (u64) · removed (u8) · labelLen (u16) · label bytes ·
+//	         semLen (u16) · sem bytes (NEW in v4) · bound[NumWords] (u64 LE)
 //
-// v1/v2 files are rejected with a descriptive error — pre-1.0, and they predate site-scoped
-// identity, so there is nothing meaningful to migrate.
+// v1-v3 files are rejected with a descriptive error — pre-1.0. v3 predates first-class
+// lesson semantics (the sem field), and semantics cannot be reconstructed from a display
+// label after the fact, so there is nothing sound to migrate: re-train and re-save.
 const (
 	memMagic     = "NVSA"
-	memVersion   = uint16(3)
+	memVersion   = uint16(4)
 	memHeader    = 40
 	countsBytes  = core.Dimension * 4
 	matrixBytes  = core.NumWords * 8
 	memFixedSize = memHeader + countsBytes + matrixBytes
 	maxLabelLen  = 65535
 )
+
+// MaxSemLen bounds an association's machine-readable semantics record (the `sem` field).
+// Unlike display labels, semantics are never silently truncated — a truncated sem would
+// change meaning under a valid signature — so oversize is rejected at every untrusted
+// boundary (pack materialization, image load) and panics in StoreSemantic (caller bug).
+const MaxSemLen = 4096
 
 // RecommendedMaxActiveAssociations is the measured safe ceiling for ACTIVE associations in a
 // single memory when recall happens over a small cleanup vocabulary (~4 candidates), as in a
@@ -82,10 +90,13 @@ func (id AssociationID) less(other AssociationID) bool {
 	return id.Seq < other.Seq
 }
 
-// AssociationRecord is the public view of one ledger entry.
+// AssociationRecord is the public view of one ledger entry. Label is display-only text;
+// Sem, when present, is the machine-readable semantics record (canonical JSON) that pack
+// signatures cover and import validation checks against the bound vector.
 type AssociationRecord struct {
 	ID      AssociationID
 	Label   string
+	Sem     string
 	Removed bool
 }
 
@@ -101,10 +112,12 @@ type Contributor struct {
 	Distance int `json:"distance"`
 }
 
-// ledgerEntry is the provenance record for one stored association.
+// ledgerEntry is the provenance record for one stored association. label is display text;
+// sem is the optional machine-readable semantics record ("" for associations without one).
 type ledgerEntry struct {
 	id      AssociationID
 	label   string
+	sem     string
 	removed bool
 	bound   core.Hypervector
 }
@@ -173,14 +186,27 @@ func (am *AssociativeMemory) StoreAssociation(contextHV, targetHV core.Hypervect
 // StoreLabeled is StoreAssociation with a human-readable provenance label (e.g.
 // "fix_bug/step2→WriteFile"). Labels longer than 64 KiB are truncated.
 func (am *AssociativeMemory) StoreLabeled(contextHV, targetHV core.Hypervector, label string) AssociationID {
+	return am.StoreSemantic(contextHV, targetHV, label, "")
+}
+
+// StoreSemantic is StoreLabeled with a machine-readable semantics record: canonical JSON
+// describing what the association MEANS (e.g. a RuleGarden lesson's percept and action).
+// Sem is what pack signatures cover, fingerprints hash, and import validation re-derives
+// the bound vector from — where the label is display-only. Sem longer than MaxSemLen
+// panics: semantics must never be silently truncated the way display labels are, and our
+// own encoders stay far below the bound, so oversize is a caller bug.
+func (am *AssociativeMemory) StoreSemantic(contextHV, targetHV core.Hypervector, label, sem string) AssociationID {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
 	if am.readOnly {
-		panic("StoreLabeled called on a read-only (OpenReadOnly) memory")
+		panic("StoreSemantic called on a read-only (OpenReadOnly) memory")
 	}
 	if len(label) > maxLabelLen {
 		label = label[:maxLabelLen]
+	}
+	if len(sem) > MaxSemLen {
+		panic(fmt.Sprintf("StoreSemantic: %d-byte sem exceeds the %d-byte limit", len(sem), MaxSemLen))
 	}
 
 	bound := contextHV.Bind(targetHV)
@@ -190,7 +216,7 @@ func (am *AssociativeMemory) StoreLabeled(contextHV, targetHV core.Hypervector, 
 	id := AssociationID{Site: am.site, Seq: am.nextSeq}
 	am.nextSeq++
 	am.index[id] = len(am.ledger)
-	am.ledger = append(am.ledger, ledgerEntry{id: id, label: label, bound: bound})
+	am.ledger = append(am.ledger, ledgerEntry{id: id, label: label, sem: sem, bound: bound})
 	am.rematerializeLocked()
 	return id
 }
@@ -230,7 +256,7 @@ func (am *AssociativeMemory) Ledger() []AssociationRecord {
 
 	out := make([]AssociationRecord, len(am.ledger))
 	for i, e := range am.canonicalLocked() {
-		out[i] = AssociationRecord{ID: e.id, Label: e.label, Removed: e.removed}
+		out[i] = AssociationRecord{ID: e.id, Label: e.label, Sem: e.sem, Removed: e.removed}
 	}
 	return out
 }
@@ -350,11 +376,11 @@ func (am *AssociativeMemory) SetVocabSeed(seed uint64) {
 	am.vocabSeed = seed
 }
 
-// fileSizeLocked computes the exact v3 image size for the current state.
+// fileSizeLocked computes the exact v4 image size for the current state.
 func (am *AssociativeMemory) fileSizeLocked() int {
 	size := memFixedSize + 4
 	for i := range am.ledger {
-		size += 8 + 8 + 1 + 2 + len(am.ledger[i].label) + matrixBytes
+		size += 8 + 8 + 1 + 2 + len(am.ledger[i].label) + 2 + len(am.ledger[i].sem) + matrixBytes
 	}
 	return size
 }
@@ -367,7 +393,7 @@ func (am *AssociativeMemory) SaveToFile(filename string) error {
 	return writeMappedFile(filename, am.fileSizeLocked(), am.encodeInto)
 }
 
-// MarshalBinary returns the memory's complete v3 image — byte-identical to a saved file.
+// MarshalBinary returns the memory's complete v4 image — byte-identical to a saved file.
 // Used for in-process clones (atomic multi-merge), wasm exports (no filesystem in the
 // browser), and receipt+brain bundles for nvsa-verify.
 func (am *AssociativeMemory) MarshalBinary() ([]byte, error) {
@@ -378,7 +404,7 @@ func (am *AssociativeMemory) MarshalBinary() ([]byte, error) {
 	return buf, nil
 }
 
-// UnmarshalBinary restores a memory from a v3 image (see MarshalBinary). The receiver is
+// UnmarshalBinary restores a memory from a v4 image (see MarshalBinary). The receiver is
 // fully overwritten.
 func (am *AssociativeMemory) UnmarshalBinary(data []byte) error {
 	am.mu.Lock()
@@ -402,11 +428,11 @@ func (am *AssociativeMemory) LoadFromFile(filename string) error {
 }
 
 // minLedgerEntryBytes is the smallest possible serialized ledger entry (site + seq + removed
-// + labelLen + bound vector, zero-length label). Used to bound an untrusted ledger count
-// against the remaining file size before allocating.
-const minLedgerEntryBytes = 8 + 8 + 1 + 2 + matrixBytes
+// + labelLen + semLen + bound vector, zero-length label and sem). Used to bound an untrusted
+// ledger count against the remaining file size before allocating.
+const minLedgerEntryBytes = 8 + 8 + 1 + 2 + 2 + matrixBytes
 
-// loadFromImageLocked parses a complete v3 image into local state, rebuilds the vote tally
+// loadFromImageLocked parses a complete v4 image into local state, rebuilds the vote tally
 // and majority vector FROM the parsed ledger (never trusting the serialized copies — the
 // fingerprint anchor is ledger-derived, so a tampered tally/matrix must not survive), and
 // commits atomically only on success. Caller must hold the write lock.
@@ -450,11 +476,23 @@ func (am *AssociativeMemory) loadFromImageLocked(data []byte) error {
 		removed := data[off+16] != 0
 		labelLen := int(binary.LittleEndian.Uint16(data[off+17:]))
 		off += 19
-		if len(data) < off+labelLen+matrixBytes {
+		if len(data) < off+labelLen+2 {
 			return fmt.Errorf("memory file truncated in ledger entry %d", n+1)
 		}
 		label := string(data[off : off+labelLen])
 		off += labelLen
+		semLen := int(binary.LittleEndian.Uint16(data[off:]))
+		off += 2
+		// The sem bound is enforced on load, not just on store: a hostile image must not be
+		// able to smuggle an oversized semantics record past the StoreSemantic-side limit.
+		if semLen > MaxSemLen {
+			return fmt.Errorf("corrupt ledger entry %d: %d-byte sem exceeds the %d-byte limit", n+1, semLen, MaxSemLen)
+		}
+		if len(data) < off+semLen+matrixBytes {
+			return fmt.Errorf("memory file truncated in ledger entry %d", n+1)
+		}
+		sem := string(data[off : off+semLen])
+		off += semLen
 		var bound core.Hypervector
 		for i := 0; i < core.NumWords; i++ {
 			bound.Vector[i] = binary.LittleEndian.Uint64(data[off+i*8:])
@@ -470,7 +508,7 @@ func (am *AssociativeMemory) loadFromImageLocked(data []byte) error {
 			return fmt.Errorf("corrupt ledger: duplicate id %s", id)
 		}
 		index[id] = len(ledger)
-		ledger = append(ledger, ledgerEntry{id: id, label: label, removed: removed, bound: bound})
+		ledger = append(ledger, ledgerEntry{id: id, label: label, sem: sem, removed: removed, bound: bound})
 		if id.Site == site && id.Seq > maxOwnSeq {
 			maxOwnSeq = id.Seq
 		}
@@ -533,7 +571,7 @@ func OpenReadOnly(filename string) (*AssociativeMemory, error) {
 	return am, nil
 }
 
-// encodeInto writes the full v3 file image into buf (len(buf) must equal fileSizeLocked()).
+// encodeInto writes the full v4 file image into buf (len(buf) must equal fileSizeLocked()).
 // Entries are written in canonical order so identical states produce identical bytes.
 // Caller must hold at least a read lock.
 func (am *AssociativeMemory) encodeInto(buf []byte) {
@@ -569,6 +607,10 @@ func (am *AssociativeMemory) encodeInto(buf []byte) {
 		off += 19
 		copy(buf[off:], e.label)
 		off += len(e.label)
+		binary.LittleEndian.PutUint16(buf[off:], uint16(len(e.sem)))
+		off += 2
+		copy(buf[off:], e.sem)
+		off += len(e.sem)
 		for i := 0; i < core.NumWords; i++ {
 			binary.LittleEndian.PutUint64(buf[off+i*8:], e.bound.Vector[i])
 		}
@@ -585,7 +627,7 @@ func validateHeader(buf []byte) error {
 		return fmt.Errorf("bad magic %q (not a NeuroVSA memory file)", buf[0:4])
 	}
 	if v := binary.LittleEndian.Uint16(buf[4:]); v != memVersion {
-		return fmt.Errorf("unsupported memory file version %d (this build reads v%d; v1/v2 files predate site-scoped identity — re-train and re-save)", v, memVersion)
+		return fmt.Errorf("unsupported memory file version %d (this build reads v%d; v1/v2 predate site-scoped identity and v3 predates first-class lesson semantics — re-train and re-save, see CHANGELOG v0.9.0)", v, memVersion)
 	}
 	if d := binary.LittleEndian.Uint32(buf[8:]); d != uint32(core.Dimension) {
 		return fmt.Errorf("dimension mismatch: file has %d, build has %d", d, core.Dimension)
