@@ -40,14 +40,10 @@ Do not commit key backups, local plans, or receipts containing private repositor
 
 ## Running the arena benchmark
 
-The arena (`arena/`) is a head-to-head HDC-vs-neural routing benchmark.
-
-```bash
-go test ./arena/ -run TestArenaHDC -v          # HDC side → results_hdc.json
-python3 -m pip install model2vec               # neural side (or: sentence-transformers)
-python3 arena/neural_baseline.py               # → results_neural.json
-go test ./arena/ -run TestArenaReport -v       # merge → ARENA_RESULTS.md
-```
+Use the [paired routing benchmark guide](arena/routing-refresh/README.md) to
+rerun NeuroVSA and Model2Vec on the same inputs and hardware. Keep historical
+rows separate from new measurements and include the raw result and provenance
+when proposing an update to a benchmark claim.
 
 ## Guidelines
 

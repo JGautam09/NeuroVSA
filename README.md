@@ -100,7 +100,7 @@ Its HDC selector is an offline comparison, not part of live recommendations.
 | Experiment | What the measurements show |
 | --- | --- |
 | [Check selection](arena/check-selection/RESULTS.md) | On 57 held-out labeled cases, explicit rules selected 143 check IDs vs. 288 for the full catalog and omitted no labeled required checks after fallback. HDC added no coverage and reached 83.3% optional precision, so it remains benchmark-only. |
-| [Text routing](arena/ARENA_RESULTS_STANDARD.md) | On CLINC150 and Banking77, HDC routed faster in the reported setup but trailed TF-IDF, model2vec, and all-MiniLM on accuracy. It is a better fit for bounded, structured inputs than free-form language. |
+| [Text routing](arena/routing-refresh/RESULTS.md) | In five paired CPU repeats on Banking77 and CLINC150, HDC had lower median latency and Model2Vec Potion 8M had higher accuracy on both datasets. The Banking77 p99 ranges overlap across repeats. |
 | [Vector operations](BENCHMARKS.md) and [dimensionality](docs/DIMENSIONALITY.md) | Reproducible timings and capacity tradeoffs explain why the default remains 10,000 bits. |
 
 ## Honest limitations
