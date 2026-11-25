@@ -1,0 +1,14 @@
+{
+  "router": "tfidf",
+  "dataset": "banking77",
+  "classes": 77,
+  "test_total": 3080,
+  "accuracy": 0.8068181818181818,
+  "macro_f1": 0.8070816621138475,
+  "p50_us": 45.87500006891787,
+  "p99_us": 138.75000149710104,
+  "train_seconds": 0.08644554200145649,
+  "cold_add_us": 1054.1249939706177,
+  "cold_add_intent": "Refund_not_showing_up",
+  "cold_add_acc_after": 0.825
+}

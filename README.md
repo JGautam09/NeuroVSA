@@ -32,7 +32,9 @@ To keep the claims honest, the repo ships [**the arena**](arena/) — a head-to-
 op, same-session before/after); the neural column is the prior committed run on the same
 machine. Both sides get re-measured together in the arena-v2 rerun.
 
-**Read it straight:** a small semantic embedding router beats HDC decisively on paraphrase understanding — the axis that matters for language — and that conclusion is unchanged. The bit-sliced Bundle moved the raw latency and cold-add axes to HDC on this machine's measurements (caveat above). HDC's structural wins remain **bit-exact cross-machine determinism** and **zero model artifact**. So NeuroVSA is the right tool where inputs are **bounded/canonical** and the value is **determinism, auditability, or no-dependency deployment** — not open-vocabulary language understanding. Full method and caveats: [`arena/README.md`](arena/README.md) · [`arena/ARENA_RESULTS.md`](arena/ARENA_RESULTS.md).
+**Read it straight:** a small semantic embedding router beats HDC decisively on paraphrase understanding — the axis that matters for language — and that conclusion is unchanged. The bit-sliced Bundle moved the raw latency and cold-add axes to HDC on this machine's measurements (caveat above). HDC's structural wins remain **bit-exact cross-machine determinism** and **zero model artifact**.
+
+**Arena v2 (standard datasets)** makes it publication-grade: on the official CLINC150 and Banking77 splits, **HDC comes last on accuracy** (69–72% vs TF-IDF 81–83%, model2vec 80–86%, all-MiniLM 85–92%) **and first on latency** (~32 µs p50 vs MiniLM's ~2.9 ms). Even stdlib TF-IDF beats the HDC text encoder on real corpora. So NeuroVSA is the right tool where inputs are **bounded/canonical** and the value is **determinism, auditability, or no-dependency deployment** — not open-vocabulary language understanding. Full method and caveats: [`arena/README.md`](arena/README.md) · [`arena/ARENA_RESULTS.md`](arena/ARENA_RESULTS.md) · [`arena/ARENA_RESULTS_STANDARD.md`](arena/ARENA_RESULTS_STANDARD.md).
 
 ---
 
@@ -149,13 +151,12 @@ Deep dives in [`docs/`](docs): [architecture](docs/architecture.md) · [develope
 ## Honest limitations
 
 - **No semantic generalization.** The text encoder matches n-grams, not meaning; paraphrases of trained phrases are frequently misrouted (see the arena).
-- **A tiny embedding router beats it** on paraphrase accuracy, latency, and cold-add for natural-language routing. For open-vocabulary/voice routing, use an embedding model.
+- **Every baseline beats it on real-corpus accuracy** — on CLINC150/Banking77, HDC trails TF-IDF, model2vec, and all-MiniLM by 9–20 points (measured, arena v2). For open-vocabulary/voice routing, use an embedding model.
 - **Best fit is structured/symbolic input** — bounded command grammars, or the agent trajectory router (state + action history → next tool), where there is no language to embed.
-- **Research-grade.** APIs may change; the arena dataset is small and curated (re-run on CLINC150/Banking77 for publication-grade numbers).
+- **Research-grade.** APIs may change.
 
 ## Roadmap
 
-- Arena on standard datasets (CLINC150 / Banking77) and a full-MiniLM baseline.
 - Optional dimensionality reduction (HDC models are typically oversized at 10,000 bits).
 
 **Shipped since the original roadmap:** the AST encoder v2 (role–filler encoding of
@@ -163,7 +164,9 @@ parameter/return *types*, statement kinds, and control flow) landed in v0.7.0 an
 server default (`-ast-encoder 2`; `1` keeps the legacy names-only encoder) — measured against
 v1 in [`BENCHMARKS.md`](BENCHMARKS.md). The bit-sliced `Bundle` (the last non-word-level
 primitive) landed in v0.9.0: 35.4 µs → 2.7 µs for Bundle8, measured back-to-back, output
-bit-identical to the naive definition (differential + fuzz enforced).
+bit-identical to the naive definition (differential + fuzz enforced). Arena v2 landed in
+v0.10.0: CLINC150 + Banking77 with TF-IDF, model2vec, and all-MiniLM baselines —
+[`arena/ARENA_RESULTS_STANDARD.md`](arena/ARENA_RESULTS_STANDARD.md).
 
 ## Contributing & security
 

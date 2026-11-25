@@ -1,0 +1,16 @@
+{
+  "router": "tfidf",
+  "dataset": "clinc150",
+  "classes": 150,
+  "test_total": 4500,
+  "accuracy": 0.8328888888888889,
+  "macro_f1": 0.8307882363553585,
+  "p50_us": 78.29200330888852,
+  "p99_us": 161.54200420714915,
+  "train_seconds": 0.08866958299768157,
+  "cold_add_us": 362.08399978931993,
+  "cold_add_intent": "accept_reservations",
+  "cold_add_acc_after": 0.8666666666666667,
+  "oos_auroc": 0.8711247777777777,
+  "oos_total": 1000
+}

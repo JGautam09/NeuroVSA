@@ -75,11 +75,13 @@ on the same machine. Regenerate with the steps in [README.md](README.md).
 | Model artifact required | none (pure algorithm) | yes (downloaded model) | **HDC** |
 
 **Reading it:** both are perfect on canonical/in-grammar phrasing. The neural embedding wins
-paraphrase (semantic generalization), and — because this static CPU embedding is just a token
-lookup + mean-pool — it also wins latency and cold-add here. HDC's clear wins are integer-exact,
-cross-machine-reproducible prototypes and zero model artifact. The honest crossover: HDC is
-competitive only where inputs are bounded/canonical and the value is determinism/auditability/
-no-dependency deployment — not where free-form paraphrase or raw speed decide it.
+paraphrase — semantic generalization is the axis HDC does not have, by design. The speed axes
+(latency, cold-add) are whatever the table above measured on this machine: since the v0.9.0
+bit-sliced Bundle they lean HDC against this static embedding, but treat cross-column speed
+comparisons as same-machine indicative, not universal. HDC's structural wins are integer-exact,
+cross-machine-reproducible prototypes and zero model artifact. The honest crossover: HDC fits
+where inputs are bounded/canonical and the value is determinism/auditability/no-dependency
+deployment — not where free-form paraphrase decides it.
 `,
 		hdc.Classes, neu.Router, neu.Router,
 		canH, canN, canW,
@@ -91,8 +93,11 @@ no-dependency deployment — not where free-form paraphrase or raw speed decide 
 		hdc.Determinism.RouteMismatches, neu.Determinism.RouteMismatches,
 	)
 
-	if err := os.WriteFile("ARENA_RESULTS.md", []byte(md), 0o644); err != nil {
-		t.Fatalf("write report: %v", err)
+	// Committed reference data: rewrite only on explicit request (see TestArenaHDC).
+	if os.Getenv("ARENA_WRITE") == "1" {
+		if err := os.WriteFile("ARENA_RESULTS.md", []byte(md), 0o644); err != nil {
+			t.Fatalf("write report: %v", err)
+		}
 	}
 	fmt.Print("\n" + md + "\n")
 }

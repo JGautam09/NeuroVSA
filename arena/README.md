@@ -51,17 +51,41 @@ together in the arena-v2 rerun. HDC's structural wins are unchanged: **bit-exact
 cross-machine-reproducible prototypes** and **zero model artifact** (pure algorithm, ~KB, no
 downloaded model). Canonical accuracy tied at 100%.
 
+## Arena v2 — standard datasets (CLINC150, Banking77)
+
+The "re-run on standard datasets" caveat is now retired: the official train/test splits of
+**CLINC150** (150 intents + 1000 out-of-scope test queries) and **Banking77** (77 intents),
+fetched and SHA-256-pinned by [`datasets/fetch.py`](datasets/fetch.py), run through the same
+nearest-centroid protocol for four representations — HDC, TF-IDF (stdlib floor), model2vec,
+and **all-MiniLM-L6-v2** (the full transformer the roadmap named). Generated tables:
+[`ARENA_RESULTS_STANDARD.md`](ARENA_RESULTS_STANDARD.md). The measured story, one Apple M5 Pro:
+
+- **Accuracy (the language axis): HDC comes last on both datasets** — 69.1% / 71.8%
+  (Banking77 / CLINC150) vs TF-IDF 80.7% / 83.3%, model2vec 79.6% / 85.9%, MiniLM
+  84.9% / 91.7%. Even a stdlib TF-IDF beats the HDC n-gram encoder on real corpora —
+  stated plainly.
+- **Latency: HDC is fastest** — ~32 µs p50 vs MiniLM's ~2.9 ms (≈90×). The old caveat
+  *predicted* a full transformer would cost ~1–10 ms and lose the latency axis while
+  winning accuracy; the measurement confirms it on both counts.
+- **Out-of-scope detection (CLINC150) tracks accuracy**: min-distance AUROC 0.804 (HDC),
+  0.871 (TF-IDF), 0.926 (model2vec), 0.966 (MiniLM).
+
+```bash
+python3 arena/datasets/fetch.py                                  # pinned download + convert
+ARENA_STANDARD=1 go test ./arena -run TestArenaHDCStandard -v    # HDC side
+python3 -m pip install model2vec sentence-transformers           # baselines (venv suggested)
+python3 arena/standard_baseline.py                               # tfidf + model2vec + minilm
+ARENA_STANDARD=1 go test ./arena -run TestArenaStandardReport -v # merge tables
+```
+
 ## Honest caveats
 
-- **Small, curated dataset.** 15 intents, 45 test phrases per split — directional, not
-  publication-grade. Re-run on CLINC150 / Banking77 before drawing hard conclusions.
-- **The baseline is a *static* embedding.** model2vec is a token-lookup + mean-pool, which is
-  why it is so fast. A full transformer (all-MiniLM via sentence-transformers) would be
-  ~1–10 ms/query, and HDC would win the latency axis — but **not** the paraphrase-accuracy axis,
-  which is the one that decides free-form natural-language routing.
-- **HDC latency is `Bundle`-dominated and further optimizable** (a bit-sliced majority could cut
-  it several-fold). That could flip the latency axis vs. model2vec; it does **not** close the
-  semantic paraphrase gap.
+- **The curated corpus remains directional.** 15 intents, 45 phrases per split — useful as
+  the canonical-vs-paraphrase probe, superseded by the standard datasets above for hard
+  conclusions.
+- **Speed comparisons are same-machine indicative**, not universal: every number in the
+  tables was measured on the one reference machine, and result files record which run
+  produced them. A missing row means a missing measurement, never a hidden loss.
 - **Determinism nuance.** Both routers are stable *within* a run (0 mismatches). The real HDC
   advantage is that its integer prototypes are bit-identical *across* hardware, builds, and
   library versions; float embeddings are not.
@@ -69,6 +93,7 @@ downloaded model). Canonical accuracy tied at 100%.
 ## Bottom line
 
 HDC is competitive only where inputs are **bounded/canonical** and the value is
-**determinism, auditability, or zero-dependency deployment** — not where free-form paraphrase
-understanding or raw speed decide the outcome. For open-vocabulary conversational/voice routing,
-a small semantic embedding router is the stronger default.
+**determinism, auditability, or zero-dependency deployment** — on real intent corpora it
+loses the accuracy axis to every baseline tried, including stdlib TF-IDF, while winning
+raw per-query latency. For open-vocabulary conversational/voice routing, a small semantic
+embedding router is the stronger default.

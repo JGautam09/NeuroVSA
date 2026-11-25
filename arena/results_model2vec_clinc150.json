@@ -1,0 +1,16 @@
+{
+  "router": "model2vec",
+  "dataset": "clinc150",
+  "classes": 150,
+  "test_total": 4500,
+  "accuracy": 0.8586666666666667,
+  "macro_f1": 0.8569518840313564,
+  "p50_us": 75.79199882457033,
+  "p99_us": 101.37500066775829,
+  "train_seconds": 0.13580591599748004,
+  "cold_add_us": 1007.4169986182824,
+  "cold_add_intent": "accept_reservations",
+  "cold_add_acc_after": 0.8666666666666667,
+  "oos_auroc": 0.9258535555555556,
+  "oos_total": 1000
+}

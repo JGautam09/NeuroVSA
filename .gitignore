@@ -35,6 +35,11 @@ venv/
 *venv*/
 .python-version
 
+# Fetched arena corpora — reproduce with arena/datasets/fetch.py (SHA-256-pinned).
+# Only the fetcher and the pins are committed; results_*.json ARE committed reference data.
+arena/datasets/*.json
+arena/datasets/*.csv
+
 # Editors / IDEs
 .gemini/
 .vscode/

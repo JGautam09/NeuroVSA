@@ -1,0 +1,16 @@
+{
+  "router": "minilm",
+  "dataset": "clinc150",
+  "classes": 150,
+  "test_total": 4500,
+  "accuracy": 0.9166666666666666,
+  "macro_f1": 0.915233988241036,
+  "p50_us": 2844.0829992177896,
+  "p99_us": 3622.708005423192,
+  "train_seconds": 6.239223917000345,
+  "cold_add_us": 38901.70800150372,
+  "cold_add_intent": "accept_reservations",
+  "cold_add_acc_after": 0.9,
+  "oos_auroc": 0.9655944444444444,
+  "oos_total": 1000
+}

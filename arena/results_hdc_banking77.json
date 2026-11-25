@@ -1,0 +1,14 @@
+{
+  "router": "hdc",
+  "dataset": "banking77",
+  "classes": 77,
+  "test_total": 3080,
+  "accuracy": 0.6905844155844156,
+  "macro_f1": 0.6944104926590371,
+  "p50_us": 31.334,
+  "p99_us": 143.917,
+  "train_seconds": 0.369249042,
+  "cold_add_us": 7944.083,
+  "cold_add_intent": "Refund_not_showing_up",
+  "cold_add_acc_after": 0.7
+}
